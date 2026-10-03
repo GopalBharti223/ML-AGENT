@@ -1,0 +1,125 @@
+# ==============================
+# Environment / Secrets
+# ==============================
+.env
+.env.*
+!.env.example
+
+# Google / YouTube OAuth
+youtube_token.json
+youtube_token_backup.json
+client_secret.json
+credentials.json
+
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# ==============================
+# Generated output
+# ==============================
+output/
+
+# ==============================
+# Runtime databases / state
+# ==============================
+*.db
+*.sqlite
+*.sqlite3
+
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+data/provider_health.json
+data/provider_health.snapshot.json
+data/provider_health.snapshot2.json
+data/posted_comments.json
+data/last_sfx.json
+data/last_intro_line.json
+
+# ==============================
+# Logs / generated evidence
+# ==============================
+logs/
+*.log
+*.err
+
+# ==============================
+# Temporary files
+# ==============================
+.tmp/
+*.tmp
+*.pid
+
+# ==============================
+# Local debugging / evidence
+# ==============================
+_area_verify/
+_chartproof/
+_framecheck/
+_part0_evidence/
+_probe_internal/
+_probe_internal2/
+_probe_internal3/
+_probe_internal4/
+
+_evidence_*.py
+_grab_frames.py
+_render_all_charts.py
+_verify_area_e2e.py
+
+# Root-level generated evidence
+_*.png
+_*.jpg
+_*.jpeg
+_*.mp4
+_*.wav
+/_*.txt
+
+# ==============================
+# Local scratch / audit scripts
+# ==============================
+_audit_*.py
+_*_evidence.py
+_*_audit.py
+_*_probe.py
+_*_check.py
+_*_verify.py
+_*_dump.py
+_*_fix.py
+
+# Batch-generated logs
+_batch/*.log
+_parts1234_evidence/
+
+# ==============================
+# Experimental / scratch folders
+# ==============================
+_batch/
+app/_batch/
+
+# Root-level scratch files
+/_*.py
+/_*.txt
+/_*.json
+
+# Generated runtime data
+trend_candidates.json
+pipeline*.txt
+
+# Local database inspection / reset utilities
+check_counter.py
+list_tables.py
+reset_counter.py
+reset_upload_status.py
+
+# Local simulation output
+sim_output.txt

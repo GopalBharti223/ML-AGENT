@@ -1,0 +1,11 @@
+groq
+pydantic
+pydantic-settings
+python-dotenv
+wbgapi
+pandas
+edge-tts
+matplotlib
+Pillow
+google-api-python-client
+google-auth-oauthlib
