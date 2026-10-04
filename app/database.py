@@ -88,7 +88,24 @@ class Database:
             "title_format": "TEXT",
             "hook_style": "TEXT",
             "ding_variant": "TEXT",
-            "chime_variant": "TEXT"
+            "chime_variant": "TEXT",
+            # -------------------------------------------------
+            # ROTATION OBSERVABILITY (additive, optional).
+            #
+            # provider_id + chart_type are NOT part of any
+            # uniqueness rule and NOT read by any existing query,
+            # so old rows simply keep NULL and every pre-existing
+            # reader behaves exactly as before.  They exist so
+            # long-term chart/provider rotation can be audited
+            # from the ledger instead of inferred from story
+            # metadata (which never recorded the chart that was
+            # actually rendered).
+            #
+            # Backward compatible: ADD COLUMN on an existing
+            # database is a metadata-only operation in SQLite.
+            # -------------------------------------------------
+            "provider_id": "TEXT",
+            "chart_type": "TEXT",
         }
 
         for column_name, column_type in new_columns.items():
@@ -573,9 +590,14 @@ class Database:
         title_format: str = None,
         hook_style: str = None,
         ding_variant: str = None,
-        chime_variant: str = None
+        chime_variant: str = None,
+        provider_id: str = None,
+        chart_type: str = None
     ):
 
+        # Rotation observability only.  Both are additive and
+        # optional: existing callers that do not pass them keep
+        # working unchanged, and existing rows keep NULL.
         self.cursor.execute(
             """
             INSERT OR IGNORE INTO video_history
@@ -596,9 +618,11 @@ class Database:
                 title_format,
                 hook_style,
                 ding_variant,
-                chime_variant
+                chime_variant,
+                provider_id,
+                chart_type
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 datetime.now().isoformat(),
@@ -617,7 +641,9 @@ class Database:
                 title_format,
                 hook_style,
                 ding_variant,
-                chime_variant
+                chime_variant,
+                provider_id,
+                chart_type
             )
         )
 

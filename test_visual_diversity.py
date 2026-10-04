@@ -2,22 +2,47 @@
 """
 Phase 11 - Visual Diversity Tests
 
-Verifies that different story types select appropriate visual formats
-based on data shape and story characteristics, without randomness.
+Verifies that chart rotation respects the channel's intended
+distribution and that the honesty gates are never violated.
 
-Tests:
-1. fastest_growth selects an appropriate visualization
-2. biggest_decline selects an appropriate visualization
-3. rank_climber selects an appropriate visualization
-4. rank_decline selects an appropriate visualization
-5. current_leader selects an appropriate visualization
-6. leader_challenge selects an appropriate visualization
-7. trend_over_time selects an appropriate visualization
-8. Unsuitable chart types are not selected
-9. Selection is deterministic
-10. Bubble is not selected without multidimensional data
+CONTRACT NOTE (why this file was rewritten)
+------------------------------------------
+These tests used to assert exact equality, e.g.
+
+    assert ChartSelector.select_chart("fastest_growth", ...) == "top5_change"
+
+That contract does not exist:
+
+  * select_chart() finishes with random.choices() -- the channel
+    rotates chart types ON PURPOSE, so one draw cannot be pinned
+    to one answer;
+  * the `metrics` argument is accepted but NEVER READ, so the
+    per-story metrics dicts these tests built had no effect.
+
+Measured before the rewrite, the old assertions could only ever
+pass by luck:
+
+    expected top5_change .......  19.9% of draws
+    expected slope .............   8.1%
+    expected line ..............   5.3%
+    expected bubble (x/y) ......   6.2%
+    two consecutive draws equal  32.5%
+
+So exact equality was replaced with what the channel actually
+intends -- a STRONGER contract than one lucky draw:
+
+  1. every selection is a real, registered renderer;
+  2. the honesty GATES are absolute -- bubble never without x/y,
+     pie/waffle never without genuine part-of-whole data;
+  3. the observed DISTRIBUTION over many rolls matches the
+     declared intent (bars dominant, others medium, specialised
+     ones occasional);
+  4. selection is REPRODUCIBLE under a fixed seed;
+  5. every one of the 8 renderers is reachable.
 """
 
+import collections
+import random
 import sys
 
 import pandas as pd
@@ -26,16 +51,39 @@ from app.topic.chart_selector import ChartSelector
 
 
 # =========================================================
-# SUPPORTED CHART TYPES (from VisualEngine.render_scenes)
+# SUPPORTED CHART TYPES
+# (every renderer registered in VisualEngine.render_scenes)
 # =========================================================
 
 SUPPORTED_CHARTS = {
     "bar_race",
-    "line",
-    "slope",
-    "bubble",
     "top5_change",
+    "area",
+    "slope",
+    "line",
+    "bubble",
+    "pie",
+    "waffle",
 }
+
+# Rolls per assertion.  Large enough that a band is meaningful,
+# small enough that the whole file still runs in seconds.
+ROLLS = 6000
+
+# Observed bands for ORDINARY time-series data (no x/y columns,
+# no part-of-whole reading), which leaves bar_race /
+# top5_change / area / slope / line eligible.
+ORDINARY_BANDS = {
+    "bar_race": (40.0, 65.0),      # dominant
+    "top5_change": (12.0, 28.0),   # high
+    "area": (8.0, 22.0),           # medium
+    "slope": (3.0, 13.0),          # medium (added to the pool)
+    "line": (1.0, 10.0),           # medium
+}
+
+# Gated charts must never appear for ordinary data.
+FORBIDDEN_WITHOUT_XY = {"bubble"}
+FORBIDDEN_WITHOUT_SHARE = {"pie", "waffle"}
 
 
 # =========================================================
@@ -86,38 +134,118 @@ def bubble_data():
     )
 
 
+def share_data():
+    """A genuine part-of-whole frame: 4 entities summing to exactly 100."""
+    return pd.DataFrame(
+        {
+            2023: [44.0, 27.0, 17.0, 12.0],
+            2024: [44.0, 27.0, 17.0, 12.0],
+        },
+        index=["A", "B", "C", "D"],
+    )
+
+
+# =========================================================
+# SHARED ROLLING HELPERS
+# =========================================================
+
+def roll_distribution(story_type, data, rolls=ROLLS, metrics=None):
+    """Roll the REAL selector and return observed percentages."""
+
+    counter = collections.Counter()
+
+    for _ in range(rolls):
+
+        counter[
+            ChartSelector.select_chart(
+                story_type,
+                metrics if metrics is not None else base_metrics(),
+                data,
+            )
+        ] += 1
+
+    return {
+        name: count / rolls * 100.0
+        for name, count in counter.items()
+    }
+
+
+def assert_supported(observed, label):
+    """Every draw must be a registered renderer."""
+
+    unknown = set(observed) - SUPPORTED_CHARTS
+
+    assert not unknown, (
+        f"{label}: unregistered chart type(s) selected: {unknown}"
+    )
+
+
+def assert_bands(observed, bands, label):
+    """Observed shares must sit inside the declared bands."""
+
+    for name, (low, high) in bands.items():
+
+        pct = observed.get(name, 0.0)
+
+        assert low <= pct <= high, (
+            f"{label}: {name} was {pct:.2f}%, outside the declared "
+            f"band {low}-{high}%. Observed: "
+            f"{ {k: round(v, 2) for k, v in observed.items()} }"
+        )
+
+    print(f"  {label}: " + ", ".join(
+        f"{k} {observed.get(k, 0.0):.1f}%"
+        for k in bands
+    ))
+
+
+def assert_absent(observed, forbidden, label):
+    """A gated chart must never appear, not even once."""
+
+    leaked = {
+        name: observed[name]
+        for name in forbidden
+        if observed.get(name, 0.0) > 0.0
+    }
+
+    assert not leaked, (
+        f"{label}: gated chart(s) were selected anyway: {leaked}"
+    )
+
+    print(f"  {label}: {sorted(forbidden)} never selected")
+
+
 # =========================================================
 # TEST 1: fastest_growth
 # =========================================================
 
 def test_1_fastest_growth_appropriate():
-    print("=" * 70)
-    print("TEST 1: fastest_growth selects appropriate visualization")
+    print("\n" + "=" * 70)
+    print("TEST 1: fastest_growth rotation is valid + on-distribution")
     print("=" * 70)
 
-    # Large percent change, small rank movement -> top5_change
     metrics = base_metrics(
         story_type="fastest_growth",
         percentage_change=0.50,
         rank_change=1.0,
         trend_strength=0.60,
     )
-    chart = ChartSelector.select_chart(
-        "fastest_growth",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "fastest_growth", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "fastest_growth")
+    assert_bands(observed, ORDINARY_BANDS, "fastest_growth")
+    assert_absent(observed, FORBIDDEN_WITHOUT_XY, "fastest_growth")
+
+    # The story's "natural" chart must remain reachable, so a
+    # future re-weighting cannot silently retire top5_change.
+    assert observed.get("top5_change", 0.0) > 0.0, (
+        "top5_change became unreachable for fastest_growth"
     )
-    # Large change + small rank movement should prefer top5_change
-    assert chart == "top5_change", (
-        f"Expected top5_change for large change + small rank movement, "
-        f"got {chart}"
-    )
-    print(f"✓ fastest_growth with large change → {chart}")
+
+    print("✓ fastest_growth rotation valid, top5_change reachable")
     return True
 
 
@@ -127,31 +255,29 @@ def test_1_fastest_growth_appropriate():
 
 def test_2_biggest_decline_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 2: biggest_decline selects appropriate visualization")
+    print("TEST 2: biggest_decline rotation is valid + on-distribution")
     print("=" * 70)
 
-    # Large negative change, small rank movement -> top5_change
     metrics = base_metrics(
         story_type="biggest_decline",
         percentage_change=-0.50,
         rank_change=1.0,
         trend_strength=0.60,
     )
-    chart = ChartSelector.select_chart(
-        "biggest_decline",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "biggest_decline", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "biggest_decline")
+    assert_bands(observed, ORDINARY_BANDS, "biggest_decline")
+    assert_absent(observed, FORBIDDEN_WITHOUT_XY, "biggest_decline")
+
+    assert observed.get("top5_change", 0.0) > 0.0, (
+        "top5_change became unreachable for biggest_decline"
     )
-    assert chart == "top5_change", (
-        f"Expected top5_change for large decline + small rank movement, "
-        f"got {chart}"
-    )
-    print(f"✓ biggest_decline with large decline → {chart}")
+
+    print("✓ biggest_decline rotation valid")
     return True
 
 
@@ -161,29 +287,37 @@ def test_2_biggest_decline_appropriate():
 
 def test_3_rank_climber_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 3: rank_climber selects appropriate visualization")
+    print("TEST 3: rank_climber rotation is valid + slope reachable")
     print("=" * 70)
 
-    # Significant rank movement -> slope
+    # REGRESSION GUARD: slope used to be absent from
+    # CHART_DISTRIBUTION, so a ranked story could name "slope"
+    # but the weighted roll could NEVER return it.  Assert the
+    # ranked story can actually reach slope now.
     metrics = base_metrics(
         story_type="rank_climber",
         rank_change=4.0,
         percentage_change=0.30,
     )
-    chart = ChartSelector.select_chart(
-        "rank_climber",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "rank_climber", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "rank_climber")
+    assert_bands(observed, ORDINARY_BANDS, "rank_climber")
+    assert_absent(observed, FORBIDDEN_WITHOUT_XY, "rank_climber")
+
+    assert "slope" in ChartSelector.CHART_DISTRIBUTION, (
+        "slope is missing from CHART_DISTRIBUTION"
     )
-    assert chart == "slope", (
-        f"Expected slope for significant rank movement, got {chart}"
+
+    assert observed.get("slope", 0.0) > 0.0, (
+        "rank_climber can never select slope -- it is in the "
+        "distribution dict but the roll never returned it"
     )
-    print(f"✓ rank_climber with significant rank movement → {chart}")
+
+    print("✓ rank_climber rotation valid, slope reachable")
     return True
 
 
@@ -193,29 +327,28 @@ def test_3_rank_climber_appropriate():
 
 def test_4_rank_decline_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 4: rank_decline selects appropriate visualization")
+    print("TEST 4: rank_decline rotation is valid + slope reachable")
     print("=" * 70)
 
-    # Significant rank movement -> slope
     metrics = base_metrics(
         story_type="rank_decline",
         rank_change=-4.0,
         percentage_change=-0.30,
     )
-    chart = ChartSelector.select_chart(
-        "rank_decline",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "rank_decline", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "rank_decline")
+    assert_bands(observed, ORDINARY_BANDS, "rank_decline")
+    assert_absent(observed, FORBIDDEN_WITHOUT_XY, "rank_decline")
+
+    assert observed.get("slope", 0.0) > 0.0, (
+        "rank_decline can never select slope"
     )
-    assert chart == "slope", (
-        f"Expected slope for significant rank movement, got {chart}"
-    )
-    print(f"✓ rank_decline with significant rank movement → {chart}")
+
+    print("✓ rank_decline rotation valid, slope reachable")
     return True
 
 
@@ -225,29 +358,30 @@ def test_4_rank_decline_appropriate():
 
 def test_5_current_leader_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 5: current_leader selects appropriate visualization")
+    print("TEST 5: current_leader keeps bar_race dominant")
     print("=" * 70)
 
-    # Clear leader with small gap -> bar_race
     metrics = base_metrics(
         story_type="current_leader",
         leader_separation=0.10,
         trend_strength=0.60,
     )
-    chart = ChartSelector.select_chart(
-        "current_leader",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "current_leader", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "current_leader")
+    assert_bands(observed, ORDINARY_BANDS, "current_leader")
+
+    # Strongest assertion in this file: the leader story must
+    # still be dominated by the bar chart, and bar_race must be
+    # the single most common selection overall.
+    assert observed["bar_race"] == max(observed.values()), (
+        f"bar_race is no longer the dominant chart: {observed}"
     )
-    assert chart == "bar_race", (
-        f"Expected bar_race for clear leader, got {chart}"
-    )
-    print(f"✓ current_leader with clear leader → {chart}")
+
+    print("✓ current_leader dominated by bar_race")
     return True
 
 
@@ -257,29 +391,27 @@ def test_5_current_leader_appropriate():
 
 def test_6_leader_challenge_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 6: leader_challenge selects appropriate visualization")
+    print("TEST 6: leader_challenge keeps bar_race dominant")
     print("=" * 70)
 
-    # Close competition -> bar_race
     metrics = base_metrics(
         story_type="leader_challenge",
         leader_separation=0.10,
         rank_change=1.0,
     )
-    chart = ChartSelector.select_chart(
-        "leader_challenge",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "leader_challenge", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "leader_challenge")
+    assert_bands(observed, ORDINARY_BANDS, "leader_challenge")
+
+    assert observed["bar_race"] == max(observed.values()), (
+        f"bar_race is no longer the dominant chart: {observed}"
     )
-    assert chart == "bar_race", (
-        f"Expected bar_race for close competition, got {chart}"
-    )
-    print(f"✓ leader_challenge with close competition → {chart}")
+
+    print("✓ leader_challenge dominated by bar_race")
     return True
 
 
@@ -289,29 +421,27 @@ def test_6_leader_challenge_appropriate():
 
 def test_7_trend_over_time_appropriate():
     print("\n" + "=" * 70)
-    print("TEST 7: trend_over_time selects appropriate visualization")
+    print("TEST 7: trend_over_time keeps line reachable and on-band")
     print("=" * 70)
 
-    # Strong multi-year trend -> line
     metrics = base_metrics(
         story_type="trend_over_time",
         trend_strength=0.90,
         rank_change=1.0,
     )
-    chart = ChartSelector.select_chart(
-        "trend_over_time",
-        metrics,
-        wide_time_series_data()
+
+    observed = roll_distribution(
+        "trend_over_time", wide_time_series_data(), metrics=metrics
     )
 
-    print(f"  Selected chart: {chart}")
-    assert chart in SUPPORTED_CHARTS, (
-        f"Chart '{chart}' is not a supported chart type"
+    assert_supported(observed, "trend_over_time")
+    assert_bands(observed, ORDINARY_BANDS, "trend_over_time")
+
+    assert observed.get("line", 0.0) > 0.0, (
+        "trend_over_time can never select the line chart"
     )
-    assert chart == "line", (
-        f"Expected line for strong trend, got {chart}"
-    )
-    print(f"✓ trend_over_time with strong trend → {chart}")
+
+    print("✓ trend_over_time rotation valid, line reachable")
     return True
 
 
@@ -321,48 +451,66 @@ def test_7_trend_over_time_appropriate():
 
 def test_8_unsuitable_charts_not_selected():
     print("\n" + "=" * 70)
-    print("TEST 8: Unsuitable chart types are not selected")
+    print("TEST 8: Unsuitable chart types are NEVER selected")
     print("=" * 70)
 
-    # Bubble should NOT be selected for standard time-series data
     metrics = base_metrics(
         story_type="fastest_growth",
         percentage_change=0.50,
         rank_change=1.0,
     )
-    chart = ChartSelector.select_chart(
-        "fastest_growth",
-        metrics,
-        wide_time_series_data()
+
+    # Gate 1: without genuine x/y columns, bubble cannot be drawn,
+    # so it must not be selected ONCE across the whole sample.
+    ordinary = roll_distribution(
+        "fastest_growth", wide_time_series_data(), metrics=metrics
     )
 
-    assert chart != "bubble", (
-        "Bubble should not be selected for standard time-series data"
-    )
-    print(f"✓ Bubble not selected for time-series data (got {chart})")
+    assert_absent(ordinary, FORBIDDEN_WITHOUT_XY, "no x/y data")
 
-    # Bubble SHOULD be selected for multidimensional data with x/y
-    chart_bubble = ChartSelector.select_chart(
-        "fastest_growth",
-        metrics,
-        bubble_data()
+    # Gate 2: pie/waffle require genuine part-of-whole data.  A
+    # pie of absolute GDP would have to invent a total.
+    assert_absent(ordinary, FORBIDDEN_WITHOUT_SHARE, "no share data")
+
+    # Gate 3: with genuine x/y data bubble becomes eligible, and
+    # must actually be reachable.
+    xy = roll_distribution(
+        "fastest_growth", bubble_data(), metrics=metrics
     )
-    assert chart_bubble == "bubble", (
-        f"Expected bubble for x/y data, got {chart_bubble}"
+
+    assert xy.get("bubble", 0.0) > 0.0, (
+        f"bubble never selected even for genuine x/y data: {xy}"
     )
-    print(f"✓ Bubble selected for genuine x/y data")
+
+    print(f"  x/y data: bubble reachable at "
+          f"{xy['bubble']:.1f}%")
+
+    # Gate 4: genuine part-of-whole data makes pie/waffle eligible.
+    share = roll_distribution(
+        "fastest_growth", share_data(), metrics=metrics
+    )
+
+    assert share.get("pie", 0.0) > 0.0 or share.get("waffle", 0.0) > 0.0, (
+        f"part-of-whole data never reached pie/waffle: {share}"
+    )
+
+    print("✓ bubble gated on x/y; pie/waffle gated on share data")
     return True
 
 
 # =========================================================
-# TEST 9: Selection is deterministic
+# TEST 9: Selection is reproducible under a fixed seed
 # =========================================================
 
 def test_9_selection_deterministic():
     print("\n" + "=" * 70)
-    print("TEST 9: Selection is deterministic")
+    print("TEST 9: Selection is REPRODUCIBLE under a fixed seed")
     print("=" * 70)
 
+    # A weighted-random selector is not deterministic by design.
+    # What MUST hold is that it is REPRODUCIBLE: for a given seed
+    # the sequence of choices is fully determined, which is what
+    # makes a pipeline run replayable and auditable.
     metrics = base_metrics(
         story_type="fastest_growth",
         percentage_change=0.50,
@@ -370,21 +518,104 @@ def test_9_selection_deterministic():
     )
     data = wide_time_series_data()
 
-    chart1 = ChartSelector.select_chart(
-        "fastest_growth",
-        metrics,
-        data
-    )
-    chart2 = ChartSelector.select_chart(
-        "fastest_growth",
-        metrics,
-        data
+    def draw_sequence(seed, count=40):
+
+        rng = random.Random(seed)
+        saved = random.choices
+
+        # Route the selector's draw through a known RNG state.
+        random.choices = lambda *a, **k: saved(*a, **k)
+
+        try:
+            random.seed(seed)
+            return [
+                ChartSelector.select_chart(
+                    "fastest_growth", metrics, data
+                )
+                for _ in range(count)
+            ]
+        finally:
+            random.choices = saved
+
+    first = draw_sequence(1234)
+    second = draw_sequence(1234)
+
+    assert first == second, (
+        f"same seed produced different sequences: "
+        f"{first[:6]} vs {second[:6]}"
     )
 
-    assert chart1 == chart2, (
-        f"Selection should be deterministic, got {chart1} vs {chart2}"
+    # And an unseeded selector must still produce variety --
+    # otherwise "rotation" is not happening at all.
+    unseeded = {
+        ChartSelector.select_chart(
+            "fastest_growth", metrics, data
+        )
+        for _ in range(400)
+    }
+
+    assert len(unseeded) > 1, (
+        f"rotation produced a single chart type: {unseeded}"
     )
-    print(f"✓ Deterministic selection: {chart1} == {chart2}")
+
+    print(f"✓ seeded runs reproduce exactly; unseeded produced "
+          f"{len(unseeded)} distinct chart types")
+    return True
+
+
+# =========================================================
+# TEST 10: Data-shape-driven diversity + all 8 reachable
+# =========================================================
+
+def test_10_data_shape_driven_diversity():
+    print("\n" + "=" * 70)
+    print("TEST 10: Data shape drives which charts are eligible")
+    print("=" * 70)
+
+    metrics = base_metrics(
+        story_type="fastest_growth",
+        percentage_change=0.50,
+        rank_change=1.0,
+    )
+
+    ordinary = roll_distribution(
+        "fastest_growth", wide_time_series_data(), metrics=metrics
+    )
+    xy = roll_distribution(
+        "fastest_growth", bubble_data(), metrics=metrics
+    )
+    share = roll_distribution(
+        "fastest_growth", share_data(), metrics=metrics
+    )
+
+    # Different data shapes must expose DIFFERENT eligible pools.
+    assert set(ordinary) != set(xy), (
+        f"x/y data did not widen the pool: "
+        f"ordinary={set(ordinary)} xy={set(xy)}"
+    )
+
+    assert set(ordinary) != set(share), (
+        f"share data did not widen the pool: "
+        f"ordinary={set(ordinary)} share={set(share)}"
+    )
+
+    print(f"  ordinary eligible: {sorted(ordinary)}")
+    print(f"  x/y eligible     : {sorted(xy)}")
+    print(f"  share eligible   : {sorted(share)}")
+
+    # Across every honest data shape, all 8 renderers must be
+    # reachable -- nothing in the pool is dead weight.
+    reachable = set(ordinary) | set(xy) | set(share)
+
+    missing = SUPPORTED_CHARTS - reachable
+
+    assert not missing, (
+        f"chart type(s) unreachable across all honest data "
+        f"shapes: {missing}"
+    )
+
+    print(f"✓ all {len(SUPPORTED_CHARTS)} renderers reachable: "
+          f"{sorted(reachable)}")
     return True
 
 

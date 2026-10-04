@@ -13,6 +13,7 @@ import random
 
 from app.time_labels import coerce_year_label
 from app.config import settings
+from app.visuals import design_system
 
 
 class VisualEngine:
@@ -633,47 +634,37 @@ class VisualEngine:
     FLAG_ZOOM = 0.32
 
     @staticmethod
-    def _fit_labels_in_frame(
+    def _constrain_labels_in_frame(
         fig,
         ax,
         texts,
-        extra_left_px: float = 48.0,
+        left_margin_px: float = 0.0,
+        right_margin_px: float = 0.0,
         font_bump: float = 0.0,
         min_font_pt: float = 12.0,
+        max_shift_frac: float = 0.12,
     ) -> list:
-        """Guarantee every label (plus a flag icon to its left)
-        stays inside the figure's left edge, and hand back the
-        font sizes that achieve it.
+        """Keep every text's box inside the FIGURE on the
+        requested side(s); return the base font sizes.
 
-        Bar labels are right-aligned at a fixed data offset, so a
-        long name ("Turks and Caicos Islands") extends left past
-        the frame edge: the text itself was clipped and the flag
-        icon -- placed at the label's left extent -- landed
-        entirely off-canvas (invisible).  Fix: measure the widest
-        rendered label after a draw, shift the axes right by the
-        overflow (bars get imperceptibly narrower; the
-        figure-anchored background is unaffected), then shrink only
-        the labels that still overflow.
+        This is the ONE safe-boundary implementation.  It backs
+        bar_race's flag-aware left-edge fit, slope's two-sided
+        fit, and (via _max_label_anchor_data_x) the moving
+        labels of line / area -- deliberately three chart types,
+        one algorithm.
 
-        DEFECT FIXED -- the guard used to return a bool and do
-        nothing else, while the animation's update() re-applied
-        ``set_fontsize(COUNTRY_FONT_SIZE)`` UNCONDITIONALLY on
-        every single frame.  The first frame therefore undid the
-        entire guard: a long label was measured and shrunk to fit,
-        then silently restored to 34pt and pushed back off-screen
-        for the whole video (measured: x0 = -145px at base,
-        -191px with the overtake bump; the flag icon landed
-        264px off the left canvas edge).  Shrinking is only
-        useful if the caller RE-USES the fitted size, so the
-        fitted base sizes are returned and the render loop is
-        required to apply them as its base.
+        Order of operations, cheapest visual cost first:
+          1. shift/narrow the axes inward, capped at
+             max_shift_frac of the figure width, split between the
+             sides in proportion to how much each one overflows;
+          2. shrink ONLY the labels that still overflow, one point
+             at a time, never below min_font_pt.
 
-        `font_bump` is the largest size increase the caller will
-        add later (the leader/overtake emphasis).  Labels are
-        fitted at base + font_bump so that per-frame emphasis can
-        never re-introduce an overflow.
+        `font_bump` pre-sizes every label at the LARGEST size the
+        caller will later apply, so per-frame emphasis can never
+        re-introduce an overflow.
 
-        Returns a list of base font sizes, parallel to `texts`.
+        Returns a list of base font sizes parallel to `texts`.
         """
 
         if not texts:
@@ -693,19 +684,7 @@ class VisualEngine:
             * float(fig.dpi)
         )
 
-        # Room the flag icon needs to the LEFT of a label:
-        # icon width (styled flag * zoom) plus the 6pt offset
-        # gap used by _attach_country_flag, with margin.
-        flag_reserve_px = (
-            float(VisualEngine._FLAG_SIZE[0])
-            * VisualEngine.FLAG_ZOOM
-            + extra_left_px
-        )
-
-        # ---------------------------------------------
-        # Fit at the LARGEST size the caller will ever
-        # use, so the emphasis bump below stays safe.
-        # ---------------------------------------------
+        right_limit = fig_w_px - float(right_margin_px)
 
         sizes = [
             max(
@@ -718,9 +697,7 @@ class VisualEngine:
 
         def _apply(applied_sizes):
 
-            for text, size in zip(
-                texts, applied_sizes
-            ):
+            for text, size in zip(texts, applied_sizes):
                 text.set_fontsize(size)
 
             try:
@@ -728,63 +705,88 @@ class VisualEngine:
             except Exception:
                 pass
 
-        def _left_edge(index):
+        def _edges(index):
 
             try:
-                return float(
-                    texts[index]
-                    .get_window_extent(
-                        renderer=renderer
-                    )
-                    .x0
+                box = texts[index].get_window_extent(
+                    renderer=renderer
                 )
+                return float(box.x0), float(box.x1)
             except Exception:
-                return flag_reserve_px
+                return None
+
+        def _overflow(index):
+
+            edges = _edges(index)
+
+            if edges is None:
+                return 0.0, 0.0
+
+            x0, x1 = edges
+
+            return (
+                max(0.0, float(left_margin_px) - x0),
+                max(0.0, x1 - right_limit),
+            )
 
         _apply(sizes)
 
-        min_x0 = min(
-            _left_edge(index)
-            for index in range(len(texts))
-        )
+        need_left = 0.0
+        need_right = 0.0
 
-        overflow_px = flag_reserve_px - min_x0
+        for index in range(len(texts)):
 
-        if overflow_px > 0:
+            left, right = _overflow(index)
 
-            max_shift_px = 0.12 * fig_w_px
+            need_left = max(need_left, left)
+            need_right = max(need_right, right)
+
+        total_need = need_left + need_right
+
+        if total_need > 0:
 
             shift_px = min(
-                overflow_px,
-                max_shift_px,
+                total_need,
+                max_shift_frac * fig_w_px,
             )
 
-            dx_frac = shift_px / fig_w_px
+            share_left = need_left / total_need
+            share_right = need_right / total_need
+
+            dx_left = (
+                share_left * shift_px / fig_w_px
+            )
+            dx_right = (
+                share_right * shift_px / fig_w_px
+            )
 
             box = ax.get_position()
 
             ax.set_position(
                 [
-                    box.x0 + dx_frac,
+                    box.x0 + dx_left,
                     box.y0,
-                    box.width - dx_frac,
+                    max(
+                        0.05,
+                        box.width - dx_left - dx_right,
+                    ),
                     box.height,
                 ]
             )
 
             _apply(sizes)
 
-        # Shrink ONLY the labels that are still overflowing
-        # after the (capped) axes shift.  Bounded loop, never
-        # below min_font_pt.
+        # Shrink ONLY what still overflows after the axes shift.
         for index in range(len(texts)):
 
-            for _ in range(48):
+            for _ in range(60):
 
                 if sizes[index] <= min_font_pt:
                     break
 
-                if _left_edge(index) >= flag_reserve_px:
+                left, right = _overflow(index)
+
+                if left <= 0 and right <= 0:
                     break
 
                 sizes[index] = max(
@@ -794,19 +796,133 @@ class VisualEngine:
 
                 _apply(sizes)
 
-        # Hand back the BASE sizes: what the caller must use
-        # as the base of its own `base + emphasis` arithmetic.
-        base_sizes = [
-            max(
-                min_font_pt,
-                size - float(font_bump),
-            )
+        return [
+            max(min_font_pt, size)
             for size in sizes
         ]
 
-        _apply(base_sizes)
+    @staticmethod
+    def _fit_labels_in_frame(
+        fig,
+        ax,
+        texts,
+        extra_left_px: float = 48.0,
+        font_bump: float = 0.0,
+        min_font_pt: float = 12.0,
+    ) -> list:
+        """bar_race's flag-aware LEFT-edge fit.
+
+        Thin wrapper over _constrain_labels_in_frame (the single
+        safe-boundary implementation) that reserves the room a
+        flag icon needs to the left of its label.  Behaviour is
+        unchanged from the original flag-aware guard.
+        """
+        # Room the flag icon needs to the LEFT of a label:
+        # icon width (styled flag * zoom) plus the 6pt offset
+        # gap used by _attach_country_flag, with margin.
+        flag_reserve_px = (
+            float(VisualEngine._FLAG_SIZE[0])
+            * VisualEngine.FLAG_ZOOM
+            + extra_left_px
+        )
+
+        fit_sizes = VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            texts,
+            left_margin_px=flag_reserve_px,
+            right_margin_px=0.0,
+            font_bump=font_bump,
+            min_font_pt=min_font_pt,
+        )
+
+        # Hand back the BASE sizes: what the caller must use as
+        # the base of its own `base + emphasis` arithmetic.
+        base_sizes = [
+            max(min_font_pt, size - float(font_bump))
+            for size in fit_sizes
+        ]
+
+        for text, size in zip(texts, base_sizes):
+            text.set_fontsize(size)
+
+        try:
+            fig.canvas.draw()
+        except Exception:
+            pass
 
         return base_sizes
+
+    @staticmethod
+    def _max_label_anchor_data_x(
+        fig,
+        ax,
+        texts,
+        right_margin_px: float = 24.0,
+    ) -> float:
+        """Largest DATA-x a left-anchored moving label may sit at
+        without its text running past the figure's right edge.
+
+        line and area park the country name on the moving leading
+        edge of the series, so as the sweep advances the anchor
+        reaches the right side of the axes and a long name runs
+        off-canvas (measured before the fix: "Democratic Republic
+        of the Congo" ended at x1 = 1478px on a 1080px frame).
+
+        These labels hold a CONSTANT string at a CONSTANT font
+        size, so their pixel width is fixed: measure it once,
+        convert the pixel budget back into data coordinates, and
+        clamp the anchor in the render loop.  Short labels never
+        reach the clamp, so their appearance is unchanged.
+        """
+
+        if not texts:
+            return float("inf")
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return float("inf")
+
+        fig_w_px = (
+            float(fig.get_figwidth())
+            * float(fig.dpi)
+        )
+
+        widest = 0.0
+
+        for text in texts:
+
+            try:
+                box = text.get_window_extent(
+                    renderer=renderer
+                )
+                widest = max(
+                    widest,
+                    float(box.x1) - float(box.x0),
+                )
+            except Exception:
+                continue
+
+        if widest <= 0:
+            return float("inf")
+
+        budget_px = fig_w_px - float(right_margin_px) - widest
+
+        if budget_px <= 0:
+            # Even a zero-width anchor would overflow: fall back
+            # to the axes' own right edge so behaviour degrades
+            # to "as good as possible" rather than nonsense.
+            budget_px = 0.0
+
+        try:
+            x_data, _ = ax.transData.inverted().transform(
+                (budget_px, 0.0)
+            )
+            return float(x_data)
+        except Exception:
+            return float("inf")
 
     # =========================================================
     # PREMIUM GRADIENT SYSTEM (CSS-style linear gradients)
@@ -2203,6 +2319,18 @@ class VisualEngine:
                 year_idx = year_count - 1
                 next_idx = year_count - 1
                 year_progress = 1.0
+
+                # ENTRANCE, not a freeze.  The final ranking is
+                # still correct and visible from frame 0 (the
+                # retention intent is preserved), but the bars
+                # now FADE IN with a stagger instead of sitting
+                # motionless for 2.5s.  Measured before: only
+                # 0.0005% of pixels changed at 0.5s.
+                design_system.apply_entrance_alpha(
+                    list(bars) + list(flag_boxes),
+                    frame,
+                    payoff_frames,
+                )
 
             elif year_count <= 1:
 
@@ -4273,6 +4401,31 @@ class VisualEngine:
             lines.append(line)
             markers.append(marker)
 
+        # FRAME-SAFETY (long labels): the widest name decides how
+        # far right an anchor may travel before its text would
+        # leave the frame.  Measured once; short labels never hit
+        # the clamp so their appearance is unchanged.
+        max_label_x = VisualEngine._max_label_anchor_data_x(
+            fig,
+            ax,
+            labels,
+        )
+
+        # LABEL HIERARCHY offsets: keep the value clear of the
+        # entity name instead of stacking both on one anchor.
+        label_stack = design_system.label_stack(
+            padding if padding > 0 else 1.0
+        )
+
+        for value_label in value_labels:
+            try:
+                value_label.set_fontsize(
+                    VisualEngine.VALUE_FONT_SIZE
+                    * label_stack["value_size_ratio"]
+                )
+            except Exception:
+                continue
+
         # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each line's leading
         # marker.  Anchored to the marker's DATA coords
@@ -4377,6 +4530,18 @@ class VisualEngine:
                 payoff_frames
                 and frame < payoff_frames
             ):
+                # ENTRANCE, not a freeze: the series are already at
+                # their final (payoff) values, but they now draw
+                # themselves in with a stagger instead of holding a
+                # dead frame.  Measured before: 0.0000% of pixels
+                # changed at 0.5s.
+                design_system.apply_entrance_alpha(
+                    list(lines)
+                    + list(markers)
+                    + list(labels),
+                    frame,
+                    payoff_frames,
+                )
                 progress = 1.0
             elif payoff_frames:
                 progress = VisualEngine.ease_in_out(
@@ -4465,20 +4630,39 @@ class VisualEngine:
                 if values:
                     x = display_years[-1]
                     y = values[-1]
+
+                    # FRAME-SAFETY: the name rides the moving
+                    # leading edge, so it would run past the
+                    # right edge of the frame at the end of the
+                    # sweep.  Clamp the anchor; short labels never
+                    # reach the limit and look unchanged.
+                    label_x = min(
+                        x + 0.15,
+                        max_label_x,
+                    )
+
+                    # LABEL HIERARCHY: the value used to share
+                    # this exact anchor with the entity name, so
+                    # "60.0" rendered ON TOP of "Central African
+                    # Republic" (visible in real frames).  Lift
+                    # the value clear of the name -- the NAME is
+                    # the story, the number is support.
+                    value_y = y + label_stack["value_dy"]
+
                     markers[item_index].set_data(
                         [x],
                         [y]
                     )
                     labels[item_index].set_position(
                         (
-                            x + 0.15,
-                            y
+                            label_x,
+                            y + label_stack["entity_dy"],
                         )
                     )
                     value_labels[item_index].set_position(
                         (
-                            x + 0.15,
-                            y
+                            label_x,
+                            value_y,
                         )
                     )
                     value_labels[item_index].set_text(
@@ -4790,6 +4974,35 @@ class VisualEngine:
 
             flag_boxes.append(flag_box)
 
+        # FRAME-SAFETY (long labels): see render_line.  Clamp the
+        # moving leading-edge anchor so the name can never leave
+        # the frame.
+        max_label_x = VisualEngine._max_label_anchor_data_x(
+            fig,
+            ax,
+            labels,
+        )
+
+        # LABEL HIERARCHY offsets: keep the value clear of the
+        # entity name instead of stacking both on one anchor.
+        try:
+            _area_span = float(
+                data.to_numpy().max() - data.to_numpy().min()
+            )
+        except Exception:
+            _area_span = 1.0
+
+        label_stack = design_system.label_stack(_area_span)
+
+        for value_label in value_labels:
+            try:
+                value_label.set_fontsize(
+                    VisualEngine.VALUE_FONT_SIZE
+                    * label_stack["value_size_ratio"]
+                )
+            except Exception:
+                continue
+
         year_text = fig.text(
             0.5,
             0.135,
@@ -4831,6 +5044,18 @@ class VisualEngine:
                 payoff_frames
                 and frame < payoff_frames
             ):
+                # ENTRANCE, not a freeze: the regions are already at
+                # their final (payoff) values, but they now build
+                # themselves in with a stagger instead of holding a
+                # dead frame.  Measured before: 0.0000% of pixels
+                # changed at 0.5s.
+                design_system.apply_entrance_alpha(
+                    list(lines)
+                    + list(fills)
+                    + list(labels),
+                    frame,
+                    payoff_frames,
+                )
                 progress = 1.0
             elif payoff_frames:
                 progress = VisualEngine.ease_in_out(
@@ -4964,11 +5189,22 @@ class VisualEngine:
                 )
                 leading_y = draw_y[-1]
 
+                # FRAME-SAFETY: same clamp as the line chart --
+                # the name rides the moving leading edge and must
+                # never run past the right edge of the frame.
+                label_x = min(
+                    leading_x,
+                    max_label_x,
+                )
+
                 labels[slot].set_position(
-                    (leading_x, leading_y)
+                    (label_x, leading_y + label_stack["entity_dy"])
                 )
                 value_labels[slot].set_position(
-                    (leading_x, leading_y)
+                    (
+                        label_x,
+                        leading_y + label_stack["value_dy"],
+                    )
                 )
                 value_labels[slot].set_text(
                     VisualEngine._format_value(
@@ -5168,6 +5404,38 @@ class VisualEngine:
             left_labels.append(left_label)
             right_labels.append(right_label)
             change_labels.append(change_label)
+
+        # ---------------------------------------------
+        # FRAME-SAFETY (long labels): slope puts the name
+        # OUTSIDE the two slope endpoints, so a long name runs
+        # off whichever edge it is on.  Measured before the fix:
+        # "Democratic Republic of the Congo" started at
+        # x0 = -170px, i.e. 170px off the left of a 1080px
+        # frame.
+        #
+        # These labels never move (update() only fades alpha), so
+        # a one-time fit persists for the whole video.  Both
+        # sides are constrained because the left and right
+        # labels overflow independently.
+        # ---------------------------------------------
+
+        VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            left_labels,
+            left_margin_px=24.0,
+            right_margin_px=0.0,
+            min_font_pt=11.0,
+        )
+
+        VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            right_labels,
+            left_margin_px=0.0,
+            right_margin_px=24.0,
+            min_font_pt=11.0,
+        )
 
         # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each end-of-slope
@@ -5535,6 +5803,26 @@ class VisualEngine:
             labels.append(label)
 
         # ---------------------------------------------
+        # FRAME-SAFETY (long labels): a bubble label is
+        # anchored at its bubble with ha="left", so a long
+        # name on a bubble near the right edge runs off the
+        # frame.  Measured before this guard: "Central African
+        # Republic" ended at x1 = 1166px on a 1080px frame.
+        #
+        # Positions are static here (update() only fades alpha),
+        # so a one-time fit persists for the whole video.
+        # ---------------------------------------------
+
+        VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            labels,
+            left_margin_px=0.0,
+            right_margin_px=24.0,
+            min_font_pt=9.0,
+        )
+
+        # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each bubble label.
         # Label positions are static here; flags simply
         # fade in alongside their text.
@@ -5777,6 +6065,27 @@ class VisualEngine:
                     alpha=0.0
                 )
             )
+
+        # ---------------------------------------------
+        # FRAME-SAFETY (long labels): this is the path an
+        # x/y dataset actually takes.  The name is anchored at
+        # its bubble with ha="left", so a long name on a bubble
+        # near the right edge runs off the frame.  Measured
+        # before this guard: "Central African Republic" ended
+        # at x1 = 1166px on a 1080px frame.
+        #
+        # Positions are static (update() only fades alpha), so
+        # a one-time fit persists for the whole video.
+        # ---------------------------------------------
+
+        VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            labels,
+            left_margin_px=0.0,
+            right_margin_px=24.0,
+            min_font_pt=9.0,
+        )
 
         # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each bubble label
@@ -6062,8 +6371,17 @@ class VisualEngine:
                 payoff_frames
                 and frame < payoff_frames
             ):
+                # ENTRANCE (not a freeze).  The retention intent --
+                # the answer is on screen immediately -- is kept,
+                # but the bars now ASSEMBLE into their final state
+                # instead of sitting motionless.  Measured before
+                # this change: 0.0002% of pixels changed across
+                # the entire opening, and top5_change was 100%
+                # static across the whole video.
+                entrance_phase = True
                 progress = 1.0
             elif payoff_frames:
+                entrance_phase = False
                 progress = VisualEngine.ease_in_out(
                     (frame - payoff_frames)
                     / max(
@@ -6072,6 +6390,7 @@ class VisualEngine:
                     )
                 )
             else:
+                entrance_phase = False
                 progress = VisualEngine.ease_in_out(
                     frame
                     / max(
@@ -6083,9 +6402,25 @@ class VisualEngine:
             for index, (country, value) in enumerate(
                 ordered.items()
             ):
+                # Staggered so the winner lands first and the
+                # field trails in behind it.
+                grow = (
+                    design_system.entrance(
+                        frame,
+                        payoff_frames,
+                        delay=design_system.stagger(
+                            index, len(ordered)
+                        ),
+                        span=0.62,
+                    )
+                    if entrance_phase
+                    else 1.0
+                )
+
                 animated_value = (
                     float(value)
                     * progress
+                    * grow
                 )
                 bars[index].set_width(
                     VisualEngine._bar_width_signed(

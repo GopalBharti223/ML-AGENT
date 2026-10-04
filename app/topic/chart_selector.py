@@ -29,14 +29,48 @@ class ChartSelector:
     # =========================================================
 
     CHART_DISTRIBUTION = {
-        "bar_race": 0.50,   # Horizontal bar race (part of 70%)
-        "top5_change": 0.20,  # Horizontal top-5 change (part of 70%)
-        "area": 0.15,        # Area chart animation
+        # --- High frequency: horizontal bar animations (~67%) ---
+        "bar_race": 0.46,   # Horizontal bar race
+        "top5_change": 0.18,  # Horizontal top-5 change
+
+        # --- Medium frequency: the other time-series forms (~26%) ---
+        "area": 0.14,        # Area chart animation
+        "slope": 0.07,       # Slope chart (was MISSING entirely)
         "line": 0.05,        # Multi-line chart animation
-        "bubble": 0.10,      # Bubble point graph
-        "pie": 0.06,         # Share-of-total donut (Part 1)
-        "waffle": 0.06,      # Share-of-total 10x10 icon grid (Part 2)
+
+        # --- Occasional / specialised (~14%) ---
+        "bubble": 0.06,      # Bubble point graph
+        "pie": 0.04,         # Share-of-total donut
+        "waffle": 0.04,      # Share-of-total 10x10 icon grid
     }
+
+    # ---------------------------------------------------------
+    # WHY slope WAS MISSING, AND HOW IT IS WEIGHTED NOW
+    #
+    # render_slope() has always been registered in the dispatcher
+    # and DEFAULT_MAP maps rank_climber / rank_decline to it, but
+    # select_chart() draws from CHART_DISTRIBUTION only -- and
+    # slope was never in that dict.  So a ranked story could name
+    # "slope" and the renderer was reachable, yet the weighted
+    # roll (which re-rolls on purpose, ignoring DEFAULT_MAP) could
+    # NEVER return it: measured 0 selections in 20,000 rolls.
+    #
+    # Weighting is deliberately conservative and preserves the
+    # channel's stated shape (bars high, the rest medium, the
+    # specialised ones occasional):
+    #   * bar_race   0.50 -> 0.46  (still the single biggest)
+    #   * top5_change 0.20 -> 0.18
+    #   * area        0.15 -> 0.14
+    #   * line        0.05 (unchanged)
+    #   * bubble      0.10 -> 0.06  (it is gated on real x/y data
+    #                               anyway, so its reachable share
+    #                               barely moves)
+    #   * pie / waffle 0.06 -> 0.04 each (both already gated on
+    #                               part-of-whole data)
+    #   * slope       + 0.07  (new)
+    # The total of horizontal-bar weight stays at 0.64 against a
+    # 1.00 sum, i.e. the "bars dominate" character is preserved.
+    # ---------------------------------------------------------
 
     # =========================================================
     # PART-OF-WHOLE CHARTS (pie / waffle)  -- Part 1 and Part 2

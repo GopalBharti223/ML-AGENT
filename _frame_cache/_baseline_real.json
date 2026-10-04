@@ -1,0 +1,178 @@
+[
+  {
+    "path": "area_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 28.15,
+    "coverage_mean_pct": 22.46,
+    "opening_change_pct": {
+      "0.25s": 0.0,
+      "0.5s": 0.0,
+      "1.0s": 26.4861,
+      "1.5s": 14.6956,
+      "2.0s": 0.764,
+      "3.0s": 0.764
+    },
+    "motion_mean_pct": 7.0836,
+    "motion_max_pct": 26.4048,
+    "motion_dead_samples_pct": 50.0,
+    "mobile50_coverage_pct": 28.39,
+    "mobile50_motion_1s_pct": 26.6925
+  },
+  {
+    "path": "full_race.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 9.97,
+    "coverage_mean_pct": 9.64,
+    "opening_change_pct": {
+      "0.25s": 0.0008,
+      "0.5s": 0.0008,
+      "1.0s": 0.0008,
+      "1.5s": 2.3833,
+      "2.0s": 0.386,
+      "3.0s": 0.386
+    },
+    "motion_mean_pct": 1.3285,
+    "motion_max_pct": 6.9141,
+    "motion_dead_samples_pct": 50.0,
+    "mobile50_coverage_pct": 9.97,
+    "mobile50_motion_1s_pct": 0.0
+  },
+  {
+    "path": "bubble_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 1.67,
+    "coverage_mean_pct": 2.03,
+    "opening_change_pct": {
+      "0.25s": 0.044,
+      "0.5s": 0.0957,
+      "1.0s": 0.4981,
+      "1.5s": 0.6908,
+      "2.0s": 0.7548,
+      "3.0s": 0.7548
+    },
+    "motion_mean_pct": 0.4016,
+    "motion_max_pct": 0.7548,
+    "motion_dead_samples_pct": 3.3,
+    "mobile50_coverage_pct": 1.72,
+    "mobile50_motion_1s_pct": 0.5187
+  },
+  {
+    "path": "line_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 3.22,
+    "coverage_mean_pct": 3.16,
+    "opening_change_pct": {
+      "0.25s": 0.0,
+      "0.5s": 0.0,
+      "1.0s": 2.0934,
+      "1.5s": 1.5214,
+      "2.0s": 0.2654,
+      "3.0s": 0.2654
+    },
+    "motion_mean_pct": 0.6799,
+    "motion_max_pct": 2.0788,
+    "motion_dead_samples_pct": 50.0,
+    "mobile50_coverage_pct": 3.41,
+    "mobile50_motion_1s_pct": 2.352
+  },
+  {
+    "path": "pie_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 1.68,
+    "coverage_mean_pct": 3.75,
+    "opening_change_pct": {
+      "0.25s": 0.1101,
+      "0.5s": 0.6069,
+      "1.0s": 2.4827,
+      "1.5s": 3.5837,
+      "2.0s": 4.0151,
+      "3.0s": 4.0151
+    },
+    "motion_mean_pct": 2.1895,
+    "motion_max_pct": 4.0151,
+    "motion_dead_samples_pct": 3.3,
+    "mobile50_coverage_pct": 1.69,
+    "mobile50_motion_1s_pct": 2.6015
+  },
+  {
+    "path": "slope_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 2.08,
+    "coverage_mean_pct": 2.7,
+    "opening_change_pct": {
+      "0.25s": 0.0508,
+      "0.5s": 0.3591,
+      "1.0s": 0.7237,
+      "1.5s": 1.0298,
+      "2.0s": 1.1471,
+      "3.0s": 1.1471
+    },
+    "motion_mean_pct": 0.6612,
+    "motion_max_pct": 1.1471,
+    "motion_dead_samples_pct": 3.3,
+    "mobile50_coverage_pct": 2.21,
+    "mobile50_motion_1s_pct": 0.7797
+  },
+  {
+    "path": "top5_change_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 10.9,
+    "coverage_mean_pct": 9.08,
+    "opening_change_pct": {
+      "0.25s": 0.0006,
+      "0.5s": 0.0006,
+      "1.0s": 8.5631,
+      "1.5s": 4.7683,
+      "2.0s": 0.2035,
+      "3.0s": 0.2035
+    },
+    "motion_mean_pct": 2.2855,
+    "motion_max_pct": 8.5448,
+    "motion_dead_samples_pct": 50.0,
+    "mobile50_coverage_pct": 11.11,
+    "mobile50_motion_1s_pct": 8.6101
+  },
+  {
+    "path": "waffle_chart.mp4",
+    "resolution": "1080x1920",
+    "codec": "h264",
+    "duration_s": 2.0,
+    "frames": 60,
+    "coverage_pct": 1.75,
+    "coverage_mean_pct": 4.98,
+    "opening_change_pct": {
+      "0.25s": 0.1902,
+      "0.5s": 1.0636,
+      "1.0s": 3.8213,
+      "1.5s": 5.9612,
+      "2.0s": 6.9191,
+      "3.0s": 6.9191
+    },
+    "motion_mean_pct": 3.5426,
+    "motion_max_pct": 6.9191,
+    "motion_dead_samples_pct": 6.7,
+    "mobile50_coverage_pct": 1.78,
+    "mobile50_motion_1s_pct": 3.8667
+  }
+]

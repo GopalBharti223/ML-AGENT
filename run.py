@@ -1894,6 +1894,23 @@ def run_test_pipeline():
                 ),
                 chime_variant=_sfx_used.get(
                     "last_chime_variant"
+                ),
+                # ROTATION OBSERVABILITY (additive).
+                # Records which provider and which chart were
+                # actually used, so long-term rotation can be
+                # audited from the ledger instead of guessed.
+                # Both are optional: .get() keeps this safe if
+                # the story engine did not supply them.
+                provider_id=topic_data.get(
+                    "provider_id"
+                ),
+                chart_type=(
+                    topic_data.get("chart_type")
+                    or getattr(
+                        script,
+                        "chart_type",
+                        None,
+                    )
                 )
             )
 
