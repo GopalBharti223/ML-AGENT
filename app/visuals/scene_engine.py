@@ -6,6 +6,7 @@ import matplotlib.animation as animation
 import matplotlib.patheffects as path_effects
 import matplotlib.patches as mpatches
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 import os
@@ -923,6 +924,41 @@ class VisualEngine:
             return float(x_data)
         except Exception:
             return float("inf")
+
+    @staticmethod
+    def _is_year_axis(labels) -> bool:
+        """True when every x label is a whole year (1900..2100).
+
+        Used to decide whether the x-axis may be pinned to
+        INTEGER year ticks.  The default matplotlib locator picked
+        half-year steps on year ranges, so the axis printed
+        "2019.0  2019.5  2020.0 ...".  Any axis that is not made
+        of whole years (generic numeric x values, non-year data)
+        returns False and keeps the default locator untouched.
+        """
+
+        values = list(labels)
+
+        if len(values) < 2:
+            return False
+
+        try:
+            numbers = [float(value) for value in values]
+        except (TypeError, ValueError):
+            return False
+
+        for value in numbers:
+
+            if not np.isfinite(value):
+                return False
+
+            if abs(value - round(value)) > 1e-9:
+                return False
+
+            if not (1900 <= value <= 2100):
+                return False
+
+        return True
 
     # =========================================================
     # PREMIUM GRADIENT SYSTEM (CSS-style linear gradients)
@@ -4345,6 +4381,17 @@ class VisualEngine:
             linewidth=1
         )
 
+        # INTEGER YEAR TICKS (render audit): the default locator
+        # chose half-year steps on this range, printing
+        # "2019.0  2019.5  2020.0 ...".  When the x-axis really IS
+        # years, pin the locator to integers so the axis reads
+        # "2019  2020  2021  2022".  Non-year x-axes keep the
+        # default locator (see _is_year_axis).
+        if VisualEngine._is_year_axis(years):
+            ax.xaxis.set_major_locator(
+                MaxNLocator(integer=True)
+            )
+
         palette = [
             "#D4AF37",
             "#6E9887",
@@ -4425,6 +4472,76 @@ class VisualEngine:
                 )
             except Exception:
                 continue
+
+        # ---------------------------------------------
+        # END-LABEL DECLUTTER (render audit): the moving
+        # name/value pair is anchored to each line's endpoint, and
+        # near the right edge converging series ("Bosnia and
+        # Herzegovina" vs "Turks and Caicos Islands") printed their
+        # names and values on top of each other.  Measure the real
+        # pixel height of one name/value block once and turn it
+        # into a minimum vertical GAP in data units; the render
+        # loop then pushes overlapping blocks apart along y while
+        # the markers and lines stay on the true data.
+        #
+        # Block geometry: name is va="center" at entity_dy, value
+        # is va="bottom" at value_dy (above the name), so two
+        # blocks need  (value_dy - entity_dy) + value height
+        # + half name height + padding  between their centres.
+        # ---------------------------------------------
+        _px_to_y = 0.0
+
+        try:
+
+            fig.canvas.draw()
+            _renderer = fig.canvas.get_renderer()
+
+            _axes_h_px = (
+                ax.get_position().height
+                * fig.get_figheight()
+                * fig.dpi
+            )
+            _y_span = (y_max + padding) - (y_min - padding)
+            _px_to_y = (
+                _y_span / _axes_h_px if _axes_h_px > 0 else 0.0
+            )
+
+            _name_h = (
+                labels[0].get_window_extent(
+                    renderer=_renderer
+                ).height
+                * _px_to_y
+            )
+
+            # Value labels are still EMPTY at setup time, so their
+            # extent would measure ~0 and the gap would come out
+            # too small to separate the blocks.  Measure with a
+            # representative value, then restore the empty text.
+            value_labels[0].set_text("000.0")
+            _value_h = (
+                value_labels[0].get_window_extent(
+                    renderer=_renderer
+                ).height
+                * _px_to_y
+            )
+            value_labels[0].set_text("")
+
+            _min_label_gap = (
+                (label_stack["value_dy"] - label_stack["entity_dy"])
+                + _value_h
+                + _name_h * 0.5
+                + 10.0 * _px_to_y
+            )
+
+        except Exception:
+
+            # Conservative fallback: ~1.8x the value offset.
+            _name_h = 0.0
+            _value_h = 0.0
+            _min_label_gap = (
+                (label_stack["value_dy"] - label_stack["entity_dy"])
+                * 1.8
+            )
 
         # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each line's leading
@@ -4544,11 +4661,20 @@ class VisualEngine:
                 )
                 progress = 1.0
             elif payoff_frames:
+                # YEAR-COUNTER SYNC FIX (render audit): frames run
+                # 0..total_frames-1, so dividing by (total_frames -
+                # payoff_frames) never reached progress 1.0 on the
+                # final frame -- int(span) landed one year short and
+                # the last frame still displayed 2021 while the data
+                # ran through 2022.  The denominator must be the
+                # number of REMAINING frame steps (total_frames - 1
+                # - payoff_frames) so the final frame is exactly
+                # progress 1.0 -> final data year.
                 progress = VisualEngine.ease_in_out(
                     (frame - payoff_frames)
                     / max(
                         1,
-                        total_frames - payoff_frames,
+                        total_frames - 1 - payoff_frames,
                     )
                 )
             else:
@@ -4588,6 +4714,11 @@ class VisualEngine:
                 ]
             else:
                 display_years = visible_years
+
+            # Endpoint anchor per series for the END-LABEL
+            # DECLUTTER pass below: the true x/y of the moving line
+            # end (markers, flags and values always use these).
+            endpoints = {}
 
             for item_index, country in enumerate(data.index):
                 values = list(
@@ -4631,6 +4762,96 @@ class VisualEngine:
                     x = display_years[-1]
                     y = values[-1]
 
+                    markers[item_index].set_data(
+                        [x],
+                        [y]
+                    )
+
+                    endpoints[item_index] = (x, y)
+
+                    if flag_box is not None:
+                        flag_box.xy = (x, y)
+                        flag_box.set_visible(True)
+
+                elif flag_box is not None:
+                    flag_box.set_visible(False)
+
+            # --------------------------------------------------
+            # END-LABEL DECLUTTER pass: push overlapping name/value
+            # blocks apart along Y so two converging endpoints can
+            # never print on top of each other ("Bosnia and
+            # Herzegovina" over "Turks and Caicos Islands" at the
+            # right edge).  Only the TEXT stack moves; markers,
+            # lines and the printed values stay on the true data.
+            # --------------------------------------------------
+            if endpoints:
+
+                ordered_ends = sorted(
+                    endpoints.items(),
+                    key=lambda entry: entry[1][1],
+                )
+
+                placed = {}
+                previous = None
+
+                for item_index, (_x, true_y) in ordered_ends:
+
+                    stacked_y = true_y
+
+                    if (
+                        previous is not None
+                        and stacked_y < previous + _min_label_gap
+                    ):
+                        stacked_y = previous + _min_label_gap
+
+                    placed[item_index] = stacked_y
+                    previous = stacked_y
+
+                # Keep the whole stack inside the axes: if the
+                # topmost block was pushed past the upper limit,
+                # shift the stack back down (relative separation is
+                # preserved); clamp the bottom the same way.
+                # NOTE: get_ylim() is (bottom, top).
+                y_low, y_high = ax.get_ylim()
+
+                top_item = max(
+                    placed,
+                    key=lambda item: placed[item],
+                )
+                top_room = (
+                    y_high
+                    - label_stack["value_dy"]
+                    - _value_h
+                    - 4.0 * _px_to_y
+                )
+
+                excess = placed[top_item] - top_room
+
+                if excess > 0:
+                    for item in placed:
+                        placed[item] -= excess
+
+                bottom_item = min(
+                    placed,
+                    key=lambda item: placed[item],
+                )
+                bottom_room = (
+                    y_low
+                    + label_stack["entity_dy"]
+                    - _name_h * 0.5
+                    + 4.0 * _px_to_y
+                )
+
+                deficit = bottom_room - placed[bottom_item]
+
+                if deficit > 0:
+                    for item in placed:
+                        placed[item] += deficit
+
+                for item_index, (x, true_y) in endpoints.items():
+
+                    stacked_y = placed.get(item_index, true_y)
+
                     # FRAME-SAFETY: the name rides the moving
                     # leading edge, so it would run past the
                     # right edge of the frame at the end of the
@@ -4647,37 +4868,26 @@ class VisualEngine:
                     # Republic" (visible in real frames).  Lift
                     # the value clear of the name -- the NAME is
                     # the story, the number is support.
-                    value_y = y + label_stack["value_dy"]
-
-                    markers[item_index].set_data(
-                        [x],
-                        [y]
-                    )
                     labels[item_index].set_position(
                         (
                             label_x,
-                            y + label_stack["entity_dy"],
+                            stacked_y
+                            + label_stack["entity_dy"],
                         )
                     )
                     value_labels[item_index].set_position(
                         (
                             label_x,
-                            value_y,
+                            stacked_y
+                            + label_stack["value_dy"],
                         )
                     )
                     value_labels[item_index].set_text(
                         VisualEngine._format_value(
-                            y,
+                            true_y,
                             indicator
                         )
                     )
-
-                    if flag_box is not None:
-                        flag_box.xy = (x, y)
-                        flag_box.set_visible(True)
-
-                elif flag_box is not None:
-                    flag_box.set_visible(False)
 
             year_text.set_text(
                 str(
@@ -5058,11 +5268,14 @@ class VisualEngine:
                 )
                 progress = 1.0
             elif payoff_frames:
+                # YEAR-COUNTER SYNC FIX (same as render_line): the
+                # final frame must land on progress 1.0 or the year
+                # counter stops one data year short of the dataset.
                 progress = VisualEngine.ease_in_out(
                     (frame - payoff_frames)
                     / max(
                         1,
-                        total_frames - payoff_frames
+                        total_frames - 1 - payoff_frames
                     )
                 )
             else:
@@ -6320,6 +6533,56 @@ class VisualEngine:
             country_labels.append(country_label)
             value_labels.append(value_label)
 
+        # --------------------------------------------------
+        # VALUE/LABEL GUTTER (render audit): "-12.9" used to sit
+        # just LEFT of its (negative) bar tip -- i.e. inside the
+        # country-name column -- so on a long name the value
+        # printed straight through it ("-2.0" over "Turks and
+        # Caicos Islands").  The negative value now sits just
+        # RIGHT of the zero axis, in the clear space on its own
+        # row; positive values keep their position beyond the bar
+        # tip (unchanged).  This guard reserves that column: any
+        # name long enough to reach the value column is shrunk
+        # (never ellipsised) so label and value can never share
+        # pixels, for ANY label length.
+        # --------------------------------------------------
+        try:
+
+            fig.canvas.draw()
+            _renderer = fig.canvas.get_renderer()
+
+            _value_col_px = float(
+                ax.transData.transform(
+                    (max_abs * 0.04, 0.0)
+                )[0]
+            )
+            _budget_px = _value_col_px - 24.0
+
+            for _label in country_labels:
+
+                for _ in range(20):
+
+                    _box = _label.get_window_extent(
+                        renderer=_renderer
+                    )
+
+                    if (
+                        float(_box.x1) <= _budget_px
+                        or _label.get_fontsize() <= 14.0
+                        or _budget_px <= 0.0
+                    ):
+                        break
+
+                    _label.set_fontsize(
+                        max(
+                            14.0,
+                            _label.get_fontsize() - 1.0,
+                        )
+                    )
+
+        except Exception:
+            pass
+
         # ---------------------------------------------
         # COUNTRY FLAG ICONS (beside each label)
         # Per-country try: one bad flag must not strip
@@ -6404,14 +6667,29 @@ class VisualEngine:
             ):
                 # Staggered so the winner lands first and the
                 # field trails in behind it.
+                #
+                # OPENING-FLOOR FIX (render audit): grow used to
+                # start at 0 with a wide stagger, so rows past the
+                # winner were still empty ~1s in -- the first 0.5s
+                # read as dead space.  Growth now starts at
+                # ENTRANCE_FLOOR of final width with a tighter
+                # stagger, so every bar is on screen from frame 0
+                # and settles quickly (matching the alpha entrance
+                # used by bar_race / line).
                 grow = (
-                    design_system.entrance(
+                    design_system.ENTRANCE_FLOOR
+                    + (
+                        1.0 - design_system.ENTRANCE_FLOOR
+                    )
+                    * design_system.entrance(
                         frame,
                         payoff_frames,
                         delay=design_system.stagger(
-                            index, len(ordered)
+                            index,
+                            len(ordered),
+                            spread=0.24,
                         ),
-                        span=0.62,
+                        span=0.34,
                     )
                     if entrance_phase
                     else 1.0
@@ -6437,25 +6715,28 @@ class VisualEngine:
                         ),
                     )
                 )
-                label_x = (
-                    VisualEngine._bar_width_signed(
-                        animated_value,
-                        max_abs,
+                # VALUE/LABEL GUTTER (see the setup guard above):
+                # positive values stay just beyond their bar tip;
+                # negative values sit just RIGHT of the zero axis
+                # instead of just left of the tip, which is where
+                # they collided with the country name.  The row's
+                # name column is now guaranteed clear of its value
+                # for any label length.
+                if animated_value >= 0:
+                    label_x = (
+                        VisualEngine._bar_width_signed(
+                            animated_value,
+                            max_abs,
+                        )
+                        + max_abs * 0.04
                     )
-                    + (
-                        max_abs * 0.04
-                        if animated_value >= 0
-                        else -max_abs * 0.04
-                    )
-                )
+                else:
+                    label_x = max_abs * 0.04
+
                 value_labels[index].set_x(
                     label_x
                 )
-                value_labels[index].set_ha(
-                    "left"
-                    if animated_value >= 0
-                    else "right"
-                )
+                value_labels[index].set_ha("left")
                 sign = "+" if animated_value > 0 else ""
                 value_labels[index].set_text(
                     f"{sign}"

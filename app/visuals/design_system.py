@@ -300,12 +300,23 @@ def stagger(index, count, spread=0.55):
     return float(spread) * (index / max(1, count - 1))
 
 
+# OPENING-FLOOR FIX (render audit, bar_race / line / top5_change):
+# the entrance used to fade/grow every element from EXACTLY zero,
+# so the first ~0.5s of a Short was mostly empty canvas -- the
+# story had not started yet.  Every entrance now starts at this
+# fraction of its final size/opacity and settles to full, which
+# fills the opening with content that is already readable while
+# still animating in (settled, not rushed).
+ENTRANCE_FLOOR = 0.45
+
+
 def apply_entrance_alpha(
     artists,
     frame,
     frames,
-    spread=0.40,
-    span=0.45,
+    spread=0.24,
+    span=0.34,
+    floor=None,
 ):
     """Staggered fade-in for a renderer's artists.
 
@@ -325,10 +336,25 @@ def apply_entrance_alpha(
     pixels across 2.5s, which reads on a phone as a dead frame.
     Fading in while the data is already final keeps the retention
     behaviour and restores a real opening visual event.
+
+    OPENING-FLOOR: the fade used to start at alpha 0, so even with
+    the stagger the first ~0.5s was largely empty canvas.  The
+    fade now starts at `floor` (ENTRANCE_FLOOR by default) of the
+    artist's original opacity and settles to full, and the
+    stagger/spread window is tighter, so content is readable from
+    the very first frames without a flashy pop.
     """
 
     if not artists or not frames:
         return
+
+    if floor is None:
+        floor = ENTRANCE_FLOOR
+
+    try:
+        floor = min(1.0, max(0.0, float(floor)))
+    except (TypeError, ValueError):
+        floor = ENTRANCE_FLOOR
 
     count = len(artists)
 
@@ -360,7 +386,11 @@ def apply_entrance_alpha(
             span=span,
         )
 
+        # Floor + settle: visible from the first frame, full by the
+        # end of the entrance window (progress == 1 -> `original`).
+        eased = floor + (1.0 - floor) * progress
+
         try:
-            artist.set_alpha(original * progress)
+            artist.set_alpha(original * eased)
         except Exception:
             continue
