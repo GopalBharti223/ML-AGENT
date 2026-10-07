@@ -17,7 +17,62 @@ Design rules encoded here:
 import matplotlib.colors as mcolors
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Ellipse
+
+
+# =========================================================
+# LR ATLAS EDITORIAL CATEGORICAL SYSTEM
+#
+# ONE restrained identity across every renderer: champagne gold
+# leads, and the supporting hues are muted, desaturated
+# companions -- slate-blue, sage, terracotta, slate -- that feel
+# related and editorial on the navy canvas.  No neon, no rainbow
+# wheel: a legend-keyed chart must stay legible without looking
+# like a different brand from the single-ramp bars.
+# =========================================================
+
+# Primary brand accent; index 0 is the hero slot.
+BRAND_GOLD = "#D4AF37"
+
+# Restrained secondary accents: muted companions of the gold,
+# dark enough to sit on the navy canvas without glowing.
+# Slot 0 IS the brand gold (bound by construction, so the hero
+# slot can never drift from the brand accent).
+CATEGORICAL_PALETTE = [
+    BRAND_GOLD,  # champagne gold (hero)
+    "#7D8CA3",  # muted slate blue
+    "#6E9887",  # muted sage
+    "#B56A5A",  # muted terracotta
+    "#A67C52",  # muted bronze
+    "#8FA3BF",  # pale slate
+    "#7FA08F",  # pale sage
+    "#C08A78",  # pale terracotta
+]
+
+
+def editorial_text_effects(linewidth=2.5):
+    """Soft dark-navy halo for titles and key labels.
+
+    The heavy pure-black ``withStroke`` outline reads as gaming /
+    thumbnail art.  A thinner halo in the canvas tone keeps the
+    ivory text readable over bright bars while disappearing into
+    the design instead of framing every glyph.
+
+    NEVER pass ``alpha=`` to ``withStroke``: matplotlib then
+    REPLACES the artist's alpha with the stroke's, so animated
+    text can no longer be hidden with ``set_alpha(0)`` (caught
+    live: the bar-race closing caption stayed visible through the
+    entire video because of it).  Softness comes from the colour
+    and the thin width alone.
+    """
+
+    from matplotlib import patheffects
+
+    return [
+        patheffects.withStroke(
+            linewidth=linewidth,
+            foreground="#0B1220",
+        )
+    ]
 
 
 # =========================================================
@@ -27,6 +82,13 @@ from matplotlib.patches import Ellipse
 # Winner glow: restrained.  A halo that reads as "premium
 # emphasis", not as neon.
 GLOW_ALPHA = 0.20
+
+# Canvas tone -- must equal VisualEngine.BG_COLOR (pinned by
+# test_visual_identity_palette).  The glow's 20% alpha is
+# PRE-BLENDED over this tone instead of passed to withStroke as
+# alpha= (see editorial_text_effects: an explicit stroke alpha
+# replaces the artist alpha and breaks every fade/hide).
+CANVAS_COLOR = "#101A2C"
 
 
 # =========================================================
@@ -93,15 +155,27 @@ def bar_face(colors, index, count):
 
 
 def _winner_effects(base):
-    """A soft outer halo, used ONLY for the emphasised entity."""
+    """A soft outer halo, used ONLY for the emphasised entity.
+
+    The GLOW_ALPHA opacity is baked into the stroke colour by
+    pre-blending over the canvas (never passed as ``alpha=`` --
+    that would replace the artist's alpha and break set_alpha
+    fades/hides).  On the canvas the result is pixel-equivalent
+    to drawing the highlight at 20% alpha.
+    """
 
     from matplotlib import patheffects
+
+    highlight = np.array(mcolors.to_rgb(shade(base, 0.45)))
+    canvas = np.array(mcolors.to_rgb(CANVAS_COLOR))
+    blended = mcolors.to_hex(
+        highlight * GLOW_ALPHA + canvas * (1.0 - GLOW_ALPHA)
+    )
 
     return [
         patheffects.withStroke(
             linewidth=7.0,
-            foreground=shade(base, 0.45),
-            alpha=GLOW_ALPHA,
+            foreground=blended,
         )
     ]
 
@@ -144,12 +218,26 @@ def apply_depth(artist, colors, index, count, glow=False):
 
 
 def apply_line_depth(line, colors, index=0, width=5.0, glow=False):
-    """Match the line treatment to the bar treatment."""
+    """Match the line treatment to the bar treatment.
+
+    A single-entry colour list means "this line's EXACT colour"
+    and is used verbatim: the ramp builder falls back to the
+    default gold pair for lists shorter than two, which would
+    silently repaint every line gold.  Longer lists keep the
+    ramp-position behaviour of the bars.
+    """
 
     if line is None:
         return
 
-    base = bar_face(colors, index, 3)
+    colors = [color for color in (colors or []) if color]
+
+    if not colors:
+        base = "#F5C15C"
+    elif len(colors) == 1:
+        base = colors[0]
+    else:
+        base = bar_face(colors, index, 3)
 
     try:
         line.set_color(base)
@@ -177,6 +265,12 @@ def apply_atmosphere(ax, fig, accent, strength=1.0):
       1. a wide, very soft radial glow in the accent colour,
       2. a smaller matching glow low on the opposite side.
 
+    The glow is a smooth radial ALPHA FALLOFF (peak at the
+    centre, easing to zero at the buffer edge), not a flat-filled
+    ellipse: a flat fill showed its own boundary -- and, when it
+    reached an axes edge, a clipped hard edge -- which read as a
+    gray blob rather than atmosphere.
+
     Drawn in FIGURE coordinates at zorder 0 so they always sit
     behind the data, and never animated -- a moving background
     would compete with the chart for attention.
@@ -185,26 +279,50 @@ def apply_atmosphere(ax, fig, accent, strength=1.0):
     x0, y0, width, height = ax.get_position().bounds
 
     soft = shade(accent, 0.10)
+    red, green, blue = mcolors.to_rgb(soft)
 
+    # Radial window: 1.0 at the centre, 0.0 at the buffer edge.
+    grid = 96
+    step = 1.0 / (grid - 1)
+    yy, xx = np.mgrid[0:grid, 0:grid]
+    distance = np.sqrt(
+        ((xx * step) - 0.5) ** 2
+        + ((yy * step) - 0.5) ** 2
+    ) * 2.0
+    falloff = np.clip(1.0 - distance, 0.0, 1.0) ** 2
+
+    # (cx, cy, radius, peak alpha).  Centres are kept at least
+    # radius/2 + 0.02 from every axes edge so the glow always
+    # fades to zero BEFORE any clip boundary.
     layers = (
-        (0.74, 0.80, 0.62, 0.085),
-        (0.28, 0.24, 0.52, 0.055),
+        (0.74, 0.76, 0.44, 0.060),
+        (0.28, 0.30, 0.52, 0.040),
     )
 
     for cx, cy, radius, alpha in layers:
 
+        rgba = np.empty((grid, grid, 4), dtype=float)
+        rgba[..., 0] = red
+        rgba[..., 1] = green
+        rgba[..., 2] = blue
+        rgba[..., 3] = falloff * alpha * float(strength)
+
+        half_x = width * radius / 2.0
+        half_y = height * radius / 2.0
+
         try:
-            ax.add_patch(
-                Ellipse(
-                    (x0 + width * cx, y0 + height * cy),
-                    width * radius,
-                    height * radius,
-                    transform=fig.transFigure,
-                    facecolor=soft,
-                    edgecolor="none",
-                    alpha=alpha * float(strength),
-                    zorder=0,
-                )
+            ax.imshow(
+                rgba,
+                extent=[
+                    x0 + width * cx - half_x,
+                    y0 + height * cy - half_y,
+                    x0 + width * cx + half_x,
+                    y0 + height * cy + half_y,
+                ],
+                transform=fig.transFigure,
+                aspect="auto",
+                interpolation="bilinear",
+                zorder=0,
             )
         except Exception:
             pass

@@ -496,7 +496,9 @@ def _render_with_capture(tmp_path, countries, years):
             frames.append(
                 {
                     "n": n,
-                    "bars": list(ax.images),
+                    "bars": [
+                        img for img in ax.images if img.get_zorder() != 0
+                    ],
                     "value_texts": value_texts,
                     "label_y": [
                         float(t.get_position()[1])

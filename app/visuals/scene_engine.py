@@ -3,7 +3,6 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import matplotlib.patheffects as path_effects
 import matplotlib.patches as mpatches
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from matplotlib.ticker import MaxNLocator
@@ -218,20 +217,13 @@ class VisualEngine:
         getattr(settings, "MULTI_COLOR_PROBABILITY", 0.35)
     )
 
-    # Hues are spaced around the wheel and picked to stay
-    # legible as saturated fills on the dark canvas, while
-    # remaining distinct from LEADER_COLOR / OVERTAKE_COLOR
-    # (which still override for emphasis).
-    MULTI_COLOR_PALETTE = [
-        "#4C9BE8",  # azure
-        "#E8A33D",  # amber
-        "#5FCB8B",  # emerald
-        "#D96BA0",  # rose
-        "#9B7BE8",  # violet
-        "#E4D06A",  # straw
-        "#54C7CE",  # teal
-        "#E07B5C",  # terracotta
-    ]
+    # Restrained brand-derived set: champagne gold leads and muted
+    # slate / sage / terracotta companions follow, so the
+    # alternate bar look belongs to the SAME channel as the
+    # single-ramp version (no neon rainbow mode).  Kept distinct
+    # from LEADER_COLOR / OVERTAKE_COLOR (which still override
+    # for emphasis).
+    MULTI_COLOR_PALETTE = list(design_system.CATEGORICAL_PALETTE)
 
     _MULTI_COLOR_MODE: bool = False
 
@@ -1765,6 +1757,18 @@ class VisualEngine:
         ax.set_xticks([])
         ax.set_yticks([])
 
+        # Restrained depth behind the data (same treatment as
+        # _create_figure): soft figure-space glows at zorder 0,
+        # tinted by the active topic ramp.
+        design_system.apply_atmosphere(
+            ax,
+            fig,
+            (
+                VisualEngine._ACTIVE_PALETTE
+                or [design_system.BRAND_GOLD]
+            )[0],
+        )
+
         # =====================================================
         # VIDEO TIMING (computed early: needed by the
         # background pulse below) -- audio-synced when the real
@@ -1940,12 +1944,7 @@ class VisualEngine:
             )
 
             value_text.set_path_effects(
-                [
-                    path_effects.withStroke(
-                        linewidth=3,
-                        foreground="black"
-                    )
-                ]
+                design_system.editorial_text_effects(linewidth=2.0)
             )
 
             value_texts.append(
@@ -1965,12 +1964,7 @@ class VisualEngine:
             )
 
             name_text.set_path_effects(
-                [
-                    path_effects.withStroke(
-                        linewidth=3,
-                        foreground="black"
-                    )
-                ]
+                design_system.editorial_text_effects(linewidth=2.0)
             )
 
             name_texts.append(
@@ -2085,12 +2079,7 @@ class VisualEngine:
         )
 
         title_text.set_path_effects(
-            [
-                path_effects.withStroke(
-                    linewidth=4,
-                    foreground="black"
-                )
-            ]
+            design_system.editorial_text_effects(linewidth=2.5)
         )
 
         # =====================================================
@@ -2109,12 +2098,7 @@ class VisualEngine:
         )
 
         year_text.set_path_effects(
-            [
-                path_effects.withStroke(
-                    linewidth=5,
-                    foreground="black"
-                )
-            ]
+            design_system.editorial_text_effects(linewidth=3.0)
         )
 
         # =====================================================
@@ -2143,12 +2127,7 @@ class VisualEngine:
         )
 
         opening_text.set_path_effects(
-            [
-                path_effects.withStroke(
-                    linewidth=3,
-                    foreground="black"
-                )
-            ]
+            design_system.editorial_text_effects(linewidth=2.0)
         )
 
         # =====================================================
@@ -2168,12 +2147,7 @@ class VisualEngine:
         )
 
         closing_text.set_path_effects(
-            [
-                path_effects.withStroke(
-                    linewidth=3,
-                    foreground="black"
-                )
-            ]
+            design_system.editorial_text_effects(linewidth=2.0)
         )
 
         # =====================================================
@@ -3650,6 +3624,20 @@ class VisualEngine:
         for spine in ax.spines.values():
             spine.set_visible(False)
 
+        # Restrained depth behind the data: two soft glows in
+        # figure space at zorder 0, tinted by the active topic
+        # ramp (gold as the fallback).  Drawn once, never
+        # animated -- a moving background would compete with the
+        # chart for attention.
+        design_system.apply_atmosphere(
+            ax,
+            fig,
+            (
+                VisualEngine._ACTIVE_PALETTE
+                or [design_system.BRAND_GOLD]
+            )[0],
+        )
+
         title = fig.text(
             0.5,
             VisualEngine.TITLE_Y,
@@ -3663,12 +3651,7 @@ class VisualEngine:
         )
 
         title.set_path_effects(
-            [
-                path_effects.withStroke(
-                    linewidth=4,
-                    foreground="black"
-                )
-            ]
+            design_system.editorial_text_effects(linewidth=2.5)
         )
 
         # Generic subtitles ("AREA TREND OVER TIME") occupy prime
@@ -4392,13 +4375,9 @@ class VisualEngine:
                 MaxNLocator(integer=True)
             )
 
-        palette = [
-            "#D4AF37",
-            "#6E9887",
-            "#A67C52",
-            "#7D8CA3",
-            "#B56A5A",
-        ]
+        # Shared LR Atlas categorical system (gold-led, muted
+        # companions) instead of a renderer-local hard-coded set.
+        palette = list(design_system.CATEGORICAL_PALETTE)
 
         lines = []
         markers = []
@@ -4415,6 +4394,16 @@ class VisualEngine:
                 color=color,
                 linewidth=4,
                 solid_capstyle="round"
+            )
+            # Bar-matched line treatment: round joins plus the
+            # restrained winner halo on the hero series.  A
+            # single-entry colour list keeps the flat categorical
+            # hue EXACT (bar_face returns it untouched).
+            design_system.apply_line_depth(
+                line,
+                [color],
+                width=4,
+                glow=(index == 0),
             )
             marker, = ax.plot(
                 [],
@@ -4837,9 +4826,9 @@ class VisualEngine:
                 )
                 bottom_room = (
                     y_low
-                    + label_stack["entity_dy"]
-                    - _name_h * 0.5
                     + 4.0 * _px_to_y
+                    + _name_h * 0.5
+                    - label_stack["entity_dy"]
                 )
 
                 deficit = bottom_room - placed[bottom_item]
@@ -5108,6 +5097,14 @@ class VisualEngine:
                 linewidth=3.5,
                 solid_capstyle="round",
                 zorder=10 + depth
+            )
+            # Bar-matched line treatment; depth 0 is the biggest
+            # series (the hero), so only it carries the halo.
+            design_system.apply_line_depth(
+                line,
+                [color],
+                width=3.5,
+                glow=(depth == 0),
             )
             lines.append(line)
 
@@ -5568,6 +5565,14 @@ class VisualEngine:
                 solid_capstyle="round",
                 marker="o",
                 markersize=9
+            )
+            # Bar-matched line treatment; index 0 is rank 1, the
+            # hero series, so only it carries the halo.
+            design_system.apply_line_depth(
+                line,
+                [color],
+                width=4,
+                glow=(index == 0),
             )
             left_label = ax.text(
                 -0.04,
@@ -6649,7 +6654,7 @@ class VisualEngine:
                     (frame - payoff_frames)
                     / max(
                         1,
-                        total_frames - payoff_frames,
+                        total_frames - 1 - payoff_frames,
                     )
                 )
             else:
