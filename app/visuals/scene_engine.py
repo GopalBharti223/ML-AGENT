@@ -3411,6 +3411,7 @@ class VisualEngine:
         max_items=8,
         respect_cap: bool = True,
         focus=None,
+        fill: bool = True,
     ):
         """Normalize one wide frame for rendering.
 
@@ -3423,6 +3424,10 @@ class VisualEngine:
         `focus` (frame labels) names entities that MUST survive
         the mobile cap -- the story's named subjects (see the
         FOCUS-ENTITY BAR CAP notes above).
+
+        fill=False keeps interior/edge NaNs intact for renderers
+        whose comparison edges must be REAL observations -- slope
+        never fabricates a start/end value via ffill/bfill.
         """
         if data.empty:
             raise ValueError(
@@ -3499,11 +3504,12 @@ class VisualEngine:
                 "after cleaning."
             )
 
-        data = data.ffill(
-            axis=1
-        ).bfill(
-            axis=1
-        )
+        if fill:
+            data = data.ffill(
+                axis=1
+            ).bfill(
+                axis=1
+            )
 
         # Mobile bar cap: no chart may render more than
         # settings.MAX_CHART_ENTITIES bars (default 4) regardless
@@ -5623,23 +5629,102 @@ class VisualEngine:
                 script,
                 data,
             ),
+            # SLOPE ENDPOINT HONESTY: never forward/back-fill the
+            # comparison window -- a fabricated start or end value
+            # would be a fabricated comparison.
+            fill=False,
+        )
+
+        # Years with NO observations at all are not part of the
+        # comparison window; drop them before fixing the edges so
+        # an all-NaN trailing year cannot silently become "now".
+        data = data.dropna(
+            axis=1,
+            how="all"
         )
 
         years = list(
             data.columns
         )
+
+        if len(years) < 2:
+            raise ValueError(
+                "Slope chart needs at least two years with "
+                "observed values to compare."
+            )
+
         start_year = years[0]
         end_year = years[-1]
-        ranks = data[
+
+        # TRUE ENDPOINTS: the raw first/last COLUMN values, real
+        # observations only.  Ranks used to drive the y-coords
+        # here, which made every line flat -- identical rank rows
+        # start to end regardless of how the metric moved.  y is
+        # now the metric itself; entities missing either edge are
+        # EXCLUDED (with a printed note), never silently filled.
+        endpoints = {}
+        skipped = []
+
+        for country in data.index:
+
+            v_start = data.loc[country, start_year]
+            v_end = data.loc[country, end_year]
+
+            if pd.isna(v_start) or pd.isna(v_end):
+                skipped.append(country)
+                continue
+
+            endpoints[country] = (
+                float(v_start),
+                float(v_end),
+            )
+
+        if skipped:
+            print(
+                "  slope: excluded (missing "
+                f"{start_year} and/or {end_year} value): "
+                + ", ".join(skipped)
+            )
+
+        if not endpoints:
+            raise ValueError(
+                "Slope chart needs at least one entity with "
+                f"values in both {start_year} and {end_year}."
+            )
+
+        data = data.loc[
             [
-                start_year,
-                end_year
+                country
+                for country in data.index
+                if country in endpoints
             ]
-        ].rank(
-            method="first",
-            ascending=False,
-            axis=0
+        ]
+
+        indicator = VisualEngine._indicator_name(
+            script
         )
+
+        # VALUE-BASED Y: each line's slope IS the metric change.
+        all_values = [
+            value
+            for pair in endpoints.values()
+            for value in pair
+        ]
+
+        y_low = min(all_values)
+        y_high = max(all_values)
+
+        if y_low == y_high:
+            pad = (
+                abs(y_low) * 0.10
+                if y_low
+                else 1.0
+            )
+        else:
+            pad = (y_high - y_low) * 0.12
+
+        y_lo = y_low - pad
+        y_hi = y_high + pad
 
         total_frames = VisualEngine._duration_frames(
             script
@@ -5655,8 +5740,8 @@ class VisualEngine:
             1.25
         )
         ax.set_ylim(
-            len(data.index) + 0.5,
-            0.5
+            y_lo,
+            y_hi
         )
         ax.set_xticks(
             [
@@ -5680,26 +5765,93 @@ class VisualEngine:
                 0,
                 1
             ],
-            0.5,
-            len(data.index) + 0.5,
+            y_lo,
+            y_hi,
             color="#27313D",
             linewidth=2
+        )
+
+        # ---------------------------------------------
+        # LABEL ROWS (value-scale de-collision): with value-based
+        # y, near-equal values park name labels on top of each
+        # other (rank rows could never collide).  Solve each side's
+        # rows in VALUE units.  The gap is TWO label-block heights
+        # because a value label flips above/below its row (va
+        # top/bottom keeps its own line from running through the
+        # number), so worst-case neighbours need block+block.
+        # ---------------------------------------------
+
+        axes_px = (
+            ax.get_position().height
+            * fig.get_figheight()
+            * fig.dpi
+        )
+
+        value_pt = (
+            VisualEngine.VALUE_FONT_SIZE
+            * design_system.label_stack(
+                pad if pad > 0 else 1.0
+            )["value_size_ratio"]
+        )
+
+        block_px = (
+            max(
+                16.0,
+                float(value_pt),
+            )
+            * fig.dpi
+            / 72.0
+            * 1.2
+        )
+
+        row_gap = (
+            2.0
+            * block_px
+            / max(1.0, axes_px)
+            * (y_hi - y_lo)
+        )
+
+        left_rows = (
+            VisualEngine._solve_label_positions(
+                [
+                    endpoints[country][0]
+                    for country in data.index
+                ],
+                row_gap,
+                y_lo,
+                y_hi,
+            )
+        )
+
+        right_rows = (
+            VisualEngine._solve_label_positions(
+                [
+                    endpoints[country][1]
+                    for country in data.index
+                ],
+                row_gap,
+                y_lo,
+                y_hi,
+            )
         )
 
         lines = []
         left_labels = []
         right_labels = []
-        change_labels = []
+        left_value_labels = []
+        right_value_labels = []
 
         for index, country in enumerate(data.index):
             color = VisualEngine._get_bar_color(
                 index
             )
+            v_start, v_end = endpoints[country]
+            rising = v_end >= v_start
             line, = ax.plot(
                 [0, 0],
                 [
-                    ranks.loc[country, start_year],
-                    ranks.loc[country, start_year]
+                    v_start,
+                    v_start
                 ],
                 color=color,
                 linewidth=4,
@@ -5707,17 +5859,23 @@ class VisualEngine:
                 marker="o",
                 markersize=9
             )
-            # Bar-matched line treatment; index 0 is rank 1, the
-            # hero series, so only it carries the halo.
+            # Bar-matched line treatment; index 0 is the lead
+            # series, so only it carries the halo.
             design_system.apply_line_depth(
                 line,
                 [color],
                 width=4,
                 glow=(index == 0),
             )
+            # NAME sits outside the axes at its solved row; the
+            # VALUE chip sits just inside, on the same row, and
+            # flips to the side AWAY from its own slope so the
+            # line never runs through its own number.  The LINE
+            # stays at the raw data y -- only the label rows are
+            # de-collided.
             left_label = ax.text(
                 -0.04,
-                ranks.loc[country, start_year],
+                left_rows[index],
                 country,
                 ha="right",
                 va="center",
@@ -5727,7 +5885,7 @@ class VisualEngine:
             )
             right_label = ax.text(
                 1.04,
-                ranks.loc[country, end_year],
+                right_rows[index],
                 country,
                 ha="left",
                 va="center",
@@ -5736,33 +5894,38 @@ class VisualEngine:
                 fontweight="bold",
                 alpha=0.0
             )
-            delta = int(
-                ranks.loc[country, start_year]
-                - ranks.loc[country, end_year]
-            )
-            sign = "+" if delta > 0 else ""
-            change_label = ax.text(
-                0.5,
-                (
-                    ranks.loc[country, start_year]
-                    + ranks.loc[country, end_year]
-                ) / 2,
-                f"{sign}{delta}",
-                ha="center",
-                va="center",
-                color=(
-                    VisualEngine.ELECTRIC_BLUE
-                    if delta >= 0
-                    else "#B56A5A"
+            left_value_label = ax.text(
+                0.02,
+                left_rows[index],
+                VisualEngine._format_value(
+                    v_start,
+                    indicator,
                 ),
-                fontsize=15,
+                ha="left",
+                va="top" if rising else "bottom",
+                color=color,
+                fontsize=value_pt,
+                fontweight="bold"
+            )
+            right_value_label = ax.text(
+                0.98,
+                right_rows[index],
+                VisualEngine._format_value(
+                    v_end,
+                    indicator,
+                ),
+                ha="right",
+                va="bottom" if rising else "top",
+                color=color,
+                fontsize=value_pt,
                 fontweight="bold",
                 alpha=0.0
             )
             lines.append(line)
             left_labels.append(left_label)
             right_labels.append(right_label)
-            change_labels.append(change_label)
+            left_value_labels.append(left_value_label)
+            right_value_labels.append(right_value_label)
 
         # ---------------------------------------------
         # FRAME-SAFETY (long labels): slope puts the name
@@ -5798,7 +5961,7 @@ class VisualEngine:
 
         # ---------------------------------------------
         # COUNTRY FLAG ICONS beside each end-of-slope
-        # rank label.  Positions never move here (only
+        # name label.  Positions never move here (only
         # alpha animates), so one-time attachment is
         # enough; boxes fade in step with labels below.
         # ---------------------------------------------
@@ -5847,18 +6010,7 @@ class VisualEngine:
             )
 
             for index, country in enumerate(data.index):
-                y0 = float(
-                    ranks.loc[
-                        country,
-                        start_year
-                    ]
-                )
-                y1 = float(
-                    ranks.loc[
-                        country,
-                        end_year
-                    ]
-                )
+                y0, y1 = endpoints[country]
                 lines[index].set_data(
                     [
                         0,
@@ -5871,7 +6023,13 @@ class VisualEngine:
                         ) * progress
                     ]
                 )
+                # The arrival side (name + value + flag) fades in
+                # as the line reaches it; the departure side is
+                # already on screen at frame 0.
                 right_labels[index].set_alpha(
+                    progress
+                )
+                right_value_labels[index].set_alpha(
                     progress
                 )
                 if (
@@ -5881,20 +6039,13 @@ class VisualEngine:
                     slope_flag_boxes[
                         index
                     ].set_alpha(progress)
-                change_labels[index].set_alpha(
-                    max(
-                        0.0,
-                        (
-                            progress - 0.45
-                        ) / 0.55
-                    )
-                )
 
             return (
                 lines
                 + left_labels
                 + right_labels
-                + change_labels
+                + left_value_labels
+                + right_value_labels
                 + [
                     box
                     for box in slope_flag_boxes
