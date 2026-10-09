@@ -847,6 +847,90 @@ class VisualEngine:
         return base_sizes
 
     @staticmethod
+    def _reserve_value_headroom(
+        fig,
+        ax,
+        value_texts,
+        max_val: float,
+        right_margin_px: float = 28.0,
+        max_expand_frac: float = 0.30,
+    ) -> float:
+        """Part 2 DEFECT B guard: keep bar-race/top5 numeric labels inside.
+
+        Entity-label fit (Part 1) protects the LEFT edge; nothing
+        protected the RIGHT: the largest value text sits at
+        ``bar_width(max) + gap`` so e.g. ``36.7M`` ran ~41px past a
+        1080px canvas.  This measures the REAL rendered width of
+        every value text at its CURRENT string, widens the x-limit
+        only as much as needed (bounded by max_expand_frac so the
+        chart never collapses), and returns the (possibly new)
+        max_val.  Returns the input unchanged when nothing
+        overflows, so normal charts are pixel-identical.
+        """
+
+        if not value_texts:
+            return max_val
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return max_val
+
+        try:
+            fig_w_px = (
+                float(fig.get_figwidth()) * float(fig.dpi)
+            )
+        except Exception:
+            return max_val
+
+        right_limit = fig_w_px - float(right_margin_px)
+        worst = 0.0
+
+        for text in value_texts:
+            try:
+                box = text.get_window_extent(renderer=renderer)
+                worst = max(worst, float(box.x1) - right_limit)
+            except Exception:
+                continue
+
+        if worst <= 0:
+            return max_val
+
+        try:
+            base = float(max_val)
+        except (TypeError, ValueError):
+            return max_val
+
+        if base <= 0:
+            return max_val
+
+        # Convert the pixel overflow back into data units via the
+        # current transform, then grow the limit just past it.
+        try:
+            px_per_data = (
+                ax.transData.transform((base, 0.0))[0]
+                - ax.transData.transform((0.0, 0.0))[0]
+            ) / base
+        except Exception:
+            return max_val
+
+        if px_per_data <= 0:
+            return max_val
+
+        need_data = worst / px_per_data * 1.05
+        cap = base * (1.0 + float(max_expand_frac))
+        grown = min(base + need_data, cap)
+
+        try:
+            lo, _hi = ax.get_xlim()
+            ax.set_xlim(lo, grown)
+        except Exception:
+            return max_val
+
+        return grown
+
+    @staticmethod
     def _max_label_anchor_data_x(
         fig,
         ax,
@@ -2019,6 +2103,63 @@ class VisualEngine:
             ]
 
         # ---------------------------------------------
+        # PART 2 DEFECT B -- VALUE-LABEL HEADROOM (right edge).
+        #
+        # The value texts are EMPTY at setup time, so measure with
+        # the FINAL formatted strings (largest = worst case),
+        # positioned at the final bar tip; the guard widens the
+        # x-limit only when the real glyphs would overflow.  Runs
+        # AFTER the Part 1 left-edge fit so both sides are safe
+        # simultaneously.
+        # ---------------------------------------------
+        try:
+            _indicator = getattr(
+                script, "indicator_name", script.title
+            )
+            _final_year = years[-1]
+            for _vt, _country in zip(value_texts, countries):
+                try:
+                    _val = float(
+                        data.loc[_country, _final_year]
+                    )
+                    _vt.set_text(
+                        VisualEngine._format_value(
+                            _val,
+                            _indicator,
+                        )
+                    )
+                    _vt.set_x(
+                        VisualEngine._bar_width(
+                            _val,
+                            max_val,
+                        )
+                        + max_val * 0.012
+                    )
+                except Exception:
+                    continue
+            max_val = VisualEngine._reserve_value_headroom(
+                fig,
+                ax,
+                value_texts,
+                max_val,
+                right_margin_px=(
+                    design_system.VALUE_SAFE_MARGIN_PX
+                ),
+            )
+            for _vt in value_texts:
+                try:
+                    _vt.set_text("")
+                    _vt.set_x(0)
+                except Exception:
+                    continue
+            try:
+                fig.canvas.draw()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # ---------------------------------------------
         # COUNTRY FLAG ICONS (beside each label)
         # Per-country try: one bad flag must not strip
         # the flags off every other bar.
@@ -2213,7 +2354,7 @@ class VisualEngine:
         #
         # The FINAL comparison is on screen from frame 0 -- no
         # intro card, no buildup, no context before the payoff
-        # (settings.OPENING_PAYOFF_SECONDS, default 2.5s).  The
+        # (settings.OPENING_PAYOFF_SECONDS, default 2.0s).  The
         # history then replays as a rewind -> forward sweep that
         # completes by settings.OPENING_SWEEP_DONE of the runtime,
         # and the final state holds for the remainder.
@@ -2334,8 +2475,8 @@ class VisualEngine:
                 # still correct and visible from frame 0 (the
                 # retention intent is preserved), but the bars
                 # now FADE IN with a stagger instead of sitting
-                # motionless for 2.5s.  Measured before: only
-                # 0.0005% of pixels changed at 0.5s.
+                # motionless for the answer hold.  Measured before:
+                # only 0.0005% of pixels changed at 0.5s.
                 design_system.apply_entrance_alpha(
                     list(bars) + list(flag_boxes),
                     frame,
@@ -6609,6 +6750,96 @@ class VisualEngine:
                 )
             except Exception:
                 flag_boxes.append(None)
+
+        # PART 2 DEFECT B -- VALUE HEADROOM (right edge).  Same
+        # guard as bar_race: park the FINAL positive-tip strings
+        # at their final anchors, widen xlim only if the real
+        # glyphs overflow, then clear (update() rewrites all).
+        try:
+            for _idx, (_country, _value) in enumerate(
+                ordered.items()
+            ):
+                try:
+                    _av = float(_value)
+                    _sign = "+" if _av > 0 else ""
+                    value_labels[_idx].set_text(
+                        f"{_sign}"
+                        f"{VisualEngine._format_value(_av, indicator)}"
+                    )
+                    if _av >= 0:
+                        _lx = (
+                            VisualEngine._bar_width_signed(
+                                _av, max_abs
+                            )
+                            + max_abs * 0.04
+                        )
+                    else:
+                        _lx = max_abs * 0.04
+                    value_labels[_idx].set_x(_lx)
+                except Exception:
+                    continue
+            try:
+                fig.canvas.draw()
+            except Exception:
+                pass
+            _lo, _hi = ax.get_xlim()
+            _span = abs(_hi - _lo) or 1.0
+            # Reuse the bar-race guard via a proxy max_val: the
+            # axes are symmetric (-1.25..1.25 of max_abs), so grow
+            # both limits proportionally to the measured need.
+            try:
+                _renderer = fig.canvas.get_renderer()
+                _fig_w = (
+                    float(fig.get_figwidth()) * float(fig.dpi)
+                )
+                _limit = _fig_w - float(
+                    design_system.VALUE_SAFE_MARGIN_PX
+                )
+                _worst = 0.0
+                for _t in value_labels:
+                    try:
+                        _box = _t.get_window_extent(
+                            renderer=_renderer
+                        )
+                        _worst = max(
+                            _worst, float(_box.x1) - _limit
+                        )
+                    except Exception:
+                        continue
+                if _worst > 0:
+                    try:
+                        _px0 = ax.transData.transform(
+                            (_lo, 0.0)
+                        )[0]
+                        _px1 = ax.transData.transform(
+                            (_hi, 0.0)
+                        )[0]
+                        _ppd = abs(_px1 - _px0) / _span
+                    except Exception:
+                        _ppd = 0.0
+                    if _ppd > 0:
+                        _grow = (
+                            _worst / _ppd * 1.05 / _span
+                        )
+                        _grow = min(_grow, 0.30)
+                        ax.set_xlim(
+                            _lo * (1.0 + _grow),
+                            _hi * (1.0 + _grow),
+                        )
+                        max_abs = max_abs * (1.0 + _grow)
+            except Exception:
+                pass
+            for _vt in value_labels:
+                try:
+                    _vt.set_text("")
+                except Exception:
+                    continue
+            try:
+                fig.canvas.draw()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
         # OPENING PAYOFF: the FINAL differences are on screen from
         # frame 0 (settings.OPENING_PAYOFF_SECONDS), then the bars

@@ -360,8 +360,34 @@ def label_stack(data_range, ratio=0.055, size_ratio=0.78):
 
 
 # =========================================================
-# MOTION
+# MOTION  -- Part 2 shared language
+#
+# Every renderer speaks the same timing dialect (normalized
+# 0.0 -> 1.0 progress, smoothstep ease-in/out, staggered
+# reveal, short payoff/final beat), while each chart keeps its
+# OWN movement (bars race, lines sweep, waffles fill).
+# No bounce / shake / jitter / elastic overshoot anywhere.
 # =========================================================
+
+# Shared answer-hold / payoff window (seconds).  Renderers read
+# the env-tunable settings value; this constant is the fallback
+# and the single number tests pin.
+ANSWER_HOLD_SECONDS = 2.0
+
+# Opening-entrance stagger windows: tighter than the legacy
+# 0.55/1.0 defaults so content is readable from frame 0 and
+# settled quickly -- editorial reveal, not loading animation.
+ENTRANCE_SPREAD = 0.24
+ENTRANCE_SPAN = 0.34
+
+# Closing beat: how far before the end the final state must be
+# fully settled (fraction of total frames).  The tail after it
+# is a short intentional beat, never a long dead hold.
+FINAL_SETTLE_FRAC = 0.94
+
+# Right-edge safety (px) for numeric value labels at 1080x1920.
+VALUE_SAFE_MARGIN_PX = 28.0
+
 
 def ease_out(t):
     """Decelerating ease: quick start, calm landing.
@@ -379,6 +405,54 @@ def ease_in_out(t):
     t = max(0.0, min(1.0, float(t)))
 
     return t * t * (3.0 - 2.0 * t)
+
+
+def normalized_progress(frame, total_frames, start_frac=0.0, end_frac=1.0):
+    """Map a frame index onto eased 0.0 -> 1.0 over [start,end].
+
+    Deterministic, monotonic, bounded; immune to total_frames
+    changes.  Division-by-zero safe (degenerate window -> 1.0).
+    """
+
+    try:
+        total = max(1, int(total_frames) - 1)
+        frame = float(frame)
+    except (TypeError, ValueError):
+        return 0.0
+
+    start = max(0.0, min(1.0, float(start_frac)))
+    end = max(0.0, min(1.0, float(end_frac)))
+
+    if end <= start:
+        return 1.0 if frame >= start * total else 0.0
+
+    raw = (frame / total - start) / (end - start)
+
+    return ease_in_out(raw)
+
+
+def answer_hold_frames(total_frames, fps=30, seconds=None):
+    """Frame count of the opening answer hold (~2.0s).
+
+    Clamped to [0, total_frames // 2] so short videos keep a
+    proportional hold and never lose their replay.
+    """
+
+    try:
+        total = max(1, int(total_frames))
+        rate = float(fps) if float(fps) > 0 else 30.0
+        secs = (
+            float(seconds)
+            if seconds is not None
+            else ANSWER_HOLD_SECONDS
+        )
+    except (TypeError, ValueError):
+        return 0
+
+    if secs <= 0:
+        return 0
+
+    return min(int(secs * rate), total // 2)
 
 
 def entrance(frame, frames, delay=0.0, span=1.0):
@@ -425,7 +499,12 @@ def stagger(index, count, spread=0.55):
 # fraction of its final size/opacity and settles to full, which
 # fills the opening with content that is already readable while
 # still animating in (settled, not rushed).
-ENTRANCE_FLOOR = 0.45
+#
+# Part 2: 0.45 was still visibly dim on the answer hold -- the
+# final state must be READABLE at frame 0, with only subtle
+# presence/micro-motion.  0.72 keeps full legibility while the
+# stagger still gives the opening a real visual event.
+ENTRANCE_FLOOR = 0.72
 
 
 def apply_entrance_alpha(

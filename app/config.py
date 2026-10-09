@@ -367,10 +367,14 @@ class Settings(BaseSettings):
     # already on screen (no buildup).  The year sweep then runs
     # as a replay and completes by OPENING_SWEEP_DONE of the
     # video, holding the final state for the remainder.
+    #
+    # Part 2: the hold is an intentional ~2.0s ANSWER CARD --
+    # final result readable from frame 0, subtle entrance
+    # micro-motion only (no flashy pop), then a clean replay.
     # -----------------------------------------------------
 
     OPENING_PAYOFF_SECONDS: float = float(
-        os.getenv("OPENING_PAYOFF_SECONDS", "2.5")
+        os.getenv("OPENING_PAYOFF_SECONDS", "2.0")
     )
 
     # Fraction of the runtime by which the rewind -> forward year
