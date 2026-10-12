@@ -373,22 +373,28 @@ class VisualEngine:
             or "current us$" in indicator
         ):
 
-            if abs(value) >= 1_000_000_000_000:
+            # Sign OUTSIDE the currency symbol: "-$1.4T", never
+            # "$-1.4T" (f"${negative:.1f}" put the minus after the
+            # dollar sign -- measured on a top5 decline render).
+            sign = "-" if value < 0 else ""
+            magnitude = abs(value)
+
+            if magnitude >= 1_000_000_000_000:
                 return (
-                    f"${value / 1_000_000_000_000:.1f}T"
+                    f"{sign}${magnitude / 1_000_000_000_000:.1f}T"
                 )
 
-            if abs(value) >= 1_000_000_000:
+            if magnitude >= 1_000_000_000:
                 return (
-                    f"${value / 1_000_000_000:.1f}B"
+                    f"{sign}${magnitude / 1_000_000_000:.1f}B"
                 )
 
-            if abs(value) >= 1_000_000:
+            if magnitude >= 1_000_000:
                 return (
-                    f"${value / 1_000_000:.1f}M"
+                    f"{sign}${magnitude / 1_000_000:.1f}M"
                 )
 
-            return f"${value:,.0f}"
+            return f"{sign}${magnitude:,.0f}"
 
         if (
             "co2" in indicator
@@ -4588,11 +4594,76 @@ class VisualEngine:
         # far right an anchor may travel before its text would
         # leave the frame.  Measured once; short labels never hit
         # the clamp so their appearance is unchanged.
-        max_label_x = VisualEngine._max_label_anchor_data_x(
-            fig,
-            ax,
-            labels,
-        )
+        #
+        # The VALUE label shares this anchor (set_position below)
+        # but is still empty at setup, so measuring names alone
+        # under-reserved the right edge: "$500.0B" ran 34px past a
+        # 1080px frame while "Ireland" fit.  Probe every real
+        # formatted value for this indicator, park the widest
+        # string in one value label, and measure names + probe.
+        _anchor_indicator = VisualEngine._indicator_name(script)
+
+        if value_labels:
+            try:
+                fig.canvas.draw()
+                _probe_renderer = fig.canvas.get_renderer()
+                _probe_label = value_labels[0]
+
+                # Match the font the render loop will apply AFTER
+                # this point (VALUE_FONT_SIZE * value_size_ratio =
+                # 28.08pt): measuring at the 18pt creation font
+                # under-measured every candidate by ~35%.
+                _stack = design_system.label_stack(
+                    padding if padding > 0 else 1.0
+                )
+                _probe_label.set_fontsize(
+                    VisualEngine.VALUE_FONT_SIZE
+                    * _stack["value_size_ratio"]
+                )
+
+                _widest_str = ""
+                _widest_w = -1.0
+
+                for _entity in data.index:
+                    for _yr in years:
+                        _candidate = VisualEngine._format_value(
+                            float(data.loc[_entity, _yr]),
+                            _anchor_indicator,
+                        )
+                        if not _candidate:
+                            continue
+                        _probe_label.set_text(_candidate)
+                        try:
+                            _w = _probe_label.get_window_extent(
+                                renderer=_probe_renderer
+                            ).width
+                        except Exception:
+                            continue
+                        if _w > _widest_w:
+                            _widest_w = _w
+                            _widest_str = _candidate
+
+                _probe_label.set_text(_widest_str)
+                max_label_x = VisualEngine._max_label_anchor_data_x(
+                    fig,
+                    ax,
+                    labels + [_probe_label],
+                )
+            except Exception:
+                max_label_x = VisualEngine._max_label_anchor_data_x(
+                    fig,
+                    ax,
+                    labels,
+                )
+            finally:
+                for _vl in value_labels:
+                    _vl.set_text("")
+        else:
+            max_label_x = VisualEngine._max_label_anchor_data_x(
+                fig,
+                ax,
+                labels,
+            )
 
         # LABEL HIERARCHY offsets: keep the value clear of the
         # entity name instead of stacking both on one anchor.
@@ -5331,11 +5402,76 @@ class VisualEngine:
         # FRAME-SAFETY (long labels): see render_line.  Clamp the
         # moving leading-edge anchor so the name can never leave
         # the frame.
-        max_label_x = VisualEngine._max_label_anchor_data_x(
-            fig,
-            ax,
-            labels,
-        )
+        #
+        # Same value-label caveat as render_line: the value shares
+        # this anchor but is still empty here, so probe the widest
+        # real formatted value first or "$500.0B" overruns the
+        # right edge while short names fit.
+        if value_labels:
+            try:
+                fig.canvas.draw()
+                _probe_renderer = fig.canvas.get_renderer()
+                _probe_label = value_labels[0]
+
+                # Match the font the render loop will apply AFTER
+                # this point (VALUE_FONT_SIZE * value_size_ratio):
+                # measuring at the 18pt creation font under-measured
+                # every candidate by ~35%.
+                try:
+                    _span = float(
+                        data.to_numpy().max() - data.to_numpy().min()
+                    )
+                except Exception:
+                    _span = 1.0
+                _stack = design_system.label_stack(_span)
+                _probe_label.set_fontsize(
+                    VisualEngine.VALUE_FONT_SIZE
+                    * _stack["value_size_ratio"]
+                )
+
+                _widest_str = ""
+                _widest_w = -1.0
+
+                for _entity in data.index:
+                    for _yr in years:
+                        _candidate = VisualEngine._format_value(
+                            float(data.loc[_entity, _yr]),
+                            indicator,
+                        )
+                        if not _candidate:
+                            continue
+                        _probe_label.set_text(_candidate)
+                        try:
+                            _w = _probe_label.get_window_extent(
+                                renderer=_probe_renderer
+                            ).width
+                        except Exception:
+                            continue
+                        if _w > _widest_w:
+                            _widest_w = _w
+                            _widest_str = _candidate
+
+                _probe_label.set_text(_widest_str)
+                max_label_x = VisualEngine._max_label_anchor_data_x(
+                    fig,
+                    ax,
+                    labels + [_probe_label],
+                )
+            except Exception:
+                max_label_x = VisualEngine._max_label_anchor_data_x(
+                    fig,
+                    ax,
+                    labels,
+                )
+            finally:
+                for _vl in value_labels:
+                    _vl.set_text("")
+        else:
+            max_label_x = VisualEngine._max_label_anchor_data_x(
+                fig,
+                ax,
+                labels,
+            )
 
         # LABEL HIERARCHY offsets: keep the value clear of the
         # entity name instead of stacking both on one anchor.
@@ -6131,6 +6267,33 @@ class VisualEngine:
             sorted_values = values.sort_values(
                 ascending=True
             )
+
+            # --------------------------------------------------
+            # FRAME-SAFETY (fallback ranking): y-tick labels are
+            # NEVER drawn with axison=False (pixel-diff verified:
+            # hiding them changed 0 pixels), and their geometry
+            # ran off the left edge anyway -- measured x0 =
+            # -322px for "Democratic Republic of the Congo", so
+            # the bars rendered ANONYMOUS and the flags anchored
+            # to invisible text.  Draw the names as real axes
+            # texts right-anchored in the left gutter (the
+            # render_bar_race pattern) and run them through the
+            # flag-aware fit guard so long names shrink/shift
+            # instead of leaving the frame.
+            # --------------------------------------------------
+            bar_lo = min(
+                0.0,
+                float(sorted_values.min()),
+            )
+            bar_hi = max(
+                0.0,
+                float(sorted_values.max()),
+            )
+            if bar_hi - bar_lo <= 0:
+                bar_hi = bar_lo + 1.0
+
+            span = bar_hi - bar_lo
+
             bars = ax.barh(
                 range(
                     len(sorted_values)
@@ -6139,17 +6302,15 @@ class VisualEngine:
                 color=VisualEngine.ELECTRIC_BLUE,
                 alpha=0.0
             )
-            ax.set_yticks(
-                range(
-                    len(sorted_values)
-                )
+
+            ax.set_xlim(
+                bar_lo - span * 0.18,
+                bar_hi + span * 0.18,
             )
-            ax.set_yticklabels(
-                sorted_values.index,
-                color=VisualEngine.TEXT_COLOR,
-                fontsize=17,
-                fontweight="bold"
-            )
+
+            name_anchor_x = bar_lo - span * 0.055
+
+            ax.set_yticks([])
             ax.set_xticks([])
             ax.set_title(
                 "Single metric available",
@@ -6167,6 +6328,27 @@ class VisualEngine:
                 fontsize=18
             )
 
+            name_labels = [
+                ax.text(
+                    name_anchor_x,
+                    position,
+                    str(name),
+                    va="center",
+                    ha="right",
+                    color=VisualEngine.TEXT_COLOR,
+                    fontsize=VisualEngine.COUNTRY_FONT_SIZE,
+                    fontweight="bold",
+                    clip_on=False,
+                )
+                for position, name in enumerate(sorted_values.index)
+            ]
+
+            VisualEngine._fit_labels_in_frame(
+                fig,
+                ax,
+                name_labels,
+            )
+
             # -----------------------------------------
             # COUNTRY FLAG ICONS beside each ranked-bar
             # label -- this fallback view IS a ranking,
@@ -6182,13 +6364,11 @@ class VisualEngine:
             except Exception:
                 pass
 
-            tick_texts = ax.get_yticklabels()
-
             for flag_i, flag_country in enumerate(
                 sorted_values.index
             ):
 
-                if flag_i >= len(tick_texts):
+                if flag_i >= len(name_labels):
                     break
 
                 try:
@@ -6197,7 +6377,7 @@ class VisualEngine:
                         ax,
                         fig,
                         str(flag_country),
-                        tick_texts[flag_i],
+                        name_labels[flag_i],
                     )
 
                 except Exception:
@@ -6213,7 +6393,7 @@ class VisualEngine:
                 )
                 for bar in bars:
                     bar.set_alpha(progress)
-                return list(bars)
+                return list(bars) + name_labels
 
             return VisualEngine._save_animation(
                 fig,
