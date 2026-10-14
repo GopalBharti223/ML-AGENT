@@ -429,9 +429,18 @@ def test_bar_race_tied_values_render_distinct_rows():
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
 
-    name_set = set(NAMES)
+    # Entities render their CONFIGURED SHORT NAME (UI_SHORT_NAME_MAP),
+    # so a known-long name such as "Democratic Republic of the Congo"
+    # is drawn as "DR Congo" -- that is what keeps the label at the
+    # intended 34pt instead of shrinking it.  Resolve through the
+    # same helper the renderer uses; the count and row-separation
+    # assertions below are unchanged in strength.
+    name_set = {
+        se.design_system.short_name(name) for name in NAMES
+    }
     labels = [
-        t for t in fig.axes[0].texts if t.get_text().strip() in name_set
+        t for t in fig.axes[0].texts
+        if t.get_text().strip() in name_set
     ]
     assert len(labels) == len(NAMES), [
         t.get_text() for t in fig.axes[0].texts

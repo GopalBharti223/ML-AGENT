@@ -35,6 +35,7 @@ import os
 import pandas as pd
 import pytest
 
+from app.visuals import design_system
 from app.visuals.scene_engine import VisualEngine
 
 # The exact label that overflowed in the published-style render.
@@ -226,28 +227,67 @@ def _build_figure(countries, max_val):
 
 
 def _make_labels(ax, countries, max_val):
-    """Right-anchored country labels, exactly as the renderer makes them."""
-    return [
-        ax.text(
-            -max_val * 0.055,
-            index,
-            country,
-            va="center",
-            ha="right",
-            color=VisualEngine.TEXT_COLOR,
-            fontsize=VisualEngine.COUNTRY_FONT_SIZE,
-            fontweight="bold",
-            clip_on=False,
+    """Above-bar, LEFT-anchored country labels, exactly as the
+    PREMIUM UI v2 renderer makes them.
+
+    Phase 1 replaced the old narrow-column layout (labels right-
+    anchored in the dead left margin at -max_val * 0.055) with a
+    full-width chart whose entity names sit ABOVE their bars,
+    left-aligned just inside the chart, with the rank badge and
+    flag icon in the left inset.  The fixture has to reproduce the
+    NEW geometry or it measures a layout that no longer ships.
+    """
+    # Same reservation the renderer uses: the flag icon's width,
+    # its 6pt offset, plus breathing room, all measured from the
+    # axes' left edge in pixels.
+    flag_gap_px = 8.3          # 6pt at dpi=100
+    axes_left_px = VisualEngine.CHART_LEFT * 1080.0
+    axes_w_px = VisualEngine.CHART_WIDTH * 1080.0
+
+    name_x0_px = (
+        axes_left_px
+        + float(VisualEngine._FLAG_SIZE[0]) * VisualEngine.FLAG_ZOOM
+        + flag_gap_px
+        + 6.0
+    )
+    name_x_data = max_val * (
+        (name_x0_px - axes_left_px) / axes_w_px
+    )
+
+    texts = []
+    for index, country in enumerate(countries):
+        # Configured short names are applied before measuring, so
+        # a curated abbreviation is used instead of shrinking a
+        # known-long name (UI_SHORT_NAME_MAP).
+        label = design_system.short_name(country)
+        texts.append(
+            ax.text(
+                name_x_data,
+                index,
+                label,
+                va="bottom",
+                ha="left",
+                color=VisualEngine.TEXT_COLOR,
+                fontsize=VisualEngine.COUNTRY_FONT_SIZE,
+                fontweight="bold",
+                clip_on=False,
+            )
         )
-        for index, country in enumerate(countries)
-    ]
+    return texts
 
 
 def _flag_reserve_px():
+    """Left-edge x the renderer reserves for the flag icon.
+
+    The flag hangs left of the label inside the left inset, so a
+    label's own left edge must never come left of this.
+    """
     return (
-        float(VisualEngine._FLAG_SIZE[0])
+        VisualEngine.CHART_LEFT * 1080.0
+        + float(VisualEngine._FLAG_SIZE[0])
         * VisualEngine.FLAG_ZOOM
-        + 48.0
+        + 8.3
+        + 6.0
     )
 
 
@@ -302,14 +342,20 @@ def test_defect_b_long_label_stays_on_canvas_after_fitting():
                     f"{reserve:.1f}px flag reserve"
                 )
 
-        # A label that needs shrinking must actually shrink:
-        # this is the size the renderer must reuse each frame.
+        # The full-width PREMIUM UI v2 layout gives a long label
+        # enough room that the LEFT-edge guard no longer has to
+        # shrink it: it keeps the intended 34pt mobile-legibility
+        # size.  Under the old narrow-column layout this label was
+        # pushed off the left edge and had to shrink, so the old
+        # "must shrink" assertion is exactly what the redesign
+        # replaced -- the meaningful contract now is that the
+        # label is on-canvas AND at full size.
         long_index = REVERSAL_COUNTRIES.index(LONG_LABEL)
         base_font = float(VisualEngine.COUNTRY_FONT_SIZE)
-        assert bases[long_index] < base_font, (
-            f"DEFECT B: {LONG_LABEL!r} was not shrunk "
-            f"({bases[long_index]}pt == {base_font}pt); the guard "
-            f"cannot be doing anything"
+        assert bases[long_index] == base_font, (
+            f"DEFECT B: {LONG_LABEL!r} was shrunk to "
+            f"{bases[long_index]}pt on the full-width layout -- "
+            f"there is room for the intended {base_font}pt"
         )
 
         # Short labels keep full-size mobile legibility.
@@ -390,12 +436,19 @@ def test_defect_b_flag_anchors_track_the_label_font():
             assert all(a is not None for a in row), (
                 f"anchor measurement failed for {name!r}: {row}"
             )
-            # A right-anchored label grows LEFTWARDS as the
-            # font grows, so the anchor must strictly decrease.
+            # PREMIUM UI v2 labels are LEFT-anchored, so a bigger
+            # font grows the text RIGHTWARDS and its left edge --
+            # the flag's anchor -- stays put.  Under the old
+            # right-anchored layout the label grew leftwards and
+            # the anchor had to strictly decrease to keep the icon
+            # from being covered.  The meaningful contract now is
+            # that the anchor never moves RIGHT into the label, so
+            # the flag can never end up underneath its own name.
             for step in range(1, len(row)):
-                assert row[step] < row[step - 1], (
-                    f"DEFECT B: anchor for {name!r} did not move "
-                    f"left at bump +{step}: {row}"
+                assert row[step] <= row[step - 1] + 1e-9, (
+                    f"DEFECT B: anchor for {name!r} moved right at "
+                    f"bump +{step}: {row} -- the flag would slide "
+                    f"under its own label"
                 )
 
         # No flag -> None, and the render loop must cope.
@@ -407,6 +460,292 @@ def test_defect_b_flag_anchors_track_the_label_font():
         plt.close(fig)
 
 
+def test_flag_vertical_offsets_land_on_the_label_centre():
+    """The flag icon must sit on its label's vertical CENTRE.
+
+    Above-bar labels are va="bottom", so a row's y is the label's
+    BOTTOM edge.  Anchoring the icon on the row y parked every flag
+    half a label-height too low -- measured 29px on a 34pt label,
+    which is why the icons visibly hung under their names.  The
+    offsets must be negative (towards the label's centre, on the
+    inverted y-axis) and grow as the emphasis bump enlarges the
+    text.
+    """
+    max_val = 131338 * 1.18
+    fig, ax = _build_figure(REVERSAL_COUNTRIES, max_val)
+    try:
+        texts = _make_labels(ax, REVERSAL_COUNTRIES, max_val)
+        bases = VisualEngine._fit_labels_in_frame(
+            fig, ax, texts,
+            font_bump=VisualEngine.LABEL_FONT_BUMP,
+        )
+
+        offsets = VisualEngine._flag_vertical_offsets(
+            ax, fig, texts, bases
+        )
+
+        assert len(offsets) == len(texts)
+        for index, row in enumerate(offsets):
+            name = texts[index].get_text()
+            assert row is not None, f"no offsets for {name!r}"
+            assert len(row) == VisualEngine.LABEL_FONT_BUMP + 1, (
+                f"expected {VisualEngine.LABEL_FONT_BUMP + 1} "
+                f"offsets for {name!r}, got {len(row)}"
+            )
+            assert all(o is not None for o in row), (
+                f"offset measurement failed for {name!r}: {row}"
+            )
+
+            # Negative on the inverted axis == UP the screen, i.e.
+            # from the label's bottom edge towards its centre.
+            assert row[0] < 0.0, (
+                f"DEFECT: offset for {name!r} is {row[0]}, which "
+                f"would move the flag DOWN, not up to the centre"
+            )
+
+            # A larger font is a taller label, so the walk from
+            # the bottom edge to the centre gets longer.
+            for step in range(1, len(row)):
+                assert row[step] <= row[step - 1], (
+                    f"DEFECT: offset for {name!r} shrank at bump "
+                    f"+{step}: {row}"
+                )
+
+        # End-to-end check on real pixels: applying the offset puts
+        # the flag exactly on the label's centre.  The offset is in
+        # DATA units (that is what .xy uses), so it must be added
+        # in data space and THEN transformed -- adding it to a
+        # display-pixel value would mix the two spaces.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        for index, text in enumerate(texts):
+            box = text.get_window_extent(renderer=renderer)
+            label_center = (box.y0 + box.y1) / 2.0
+
+            flag_data_y = float(index) + offsets[index][0]
+            flag_y = ax.transData.transform(
+                (0.0, flag_data_y)
+            )[1]
+
+            assert abs(flag_y - label_center) <= 1.5, (
+                f"DEFECT: flag for {text.get_text()!r} sits at "
+                f"y={flag_y:.1f}px, its label's centre is "
+                f"{label_center:.1f}px"
+            )
+    finally:
+        plt.close(fig)
+
+
+def test_short_name_map_is_applied_before_measuring():
+    """Configured short names must be USED, not re-derived.
+
+    A known-long name with a curated abbreviation must render that
+    abbreviation -- that is the whole point of UI_SHORT_NAME_MAP,
+    because it keeps the label at the intended 34pt instead of
+    shrinking a name that already has a good short form.  A country
+    with no configured entry must keep its full text.
+    """
+    mapped = "Democratic Republic of the Congo"
+    unmapped = LONG_LABEL
+
+    expected = design_system.short_name(mapped)
+
+    assert expected != mapped, (
+        "fixture broken: this name has no configured short form, so "
+        "the test cannot prove the map is wired in"
+    )
+    assert design_system.short_name(unmapped) == unmapped, (
+        "fixture broken: the 'unmapped' name unexpectedly has a "
+        "configured short form"
+    )
+
+    max_val = 131338 * 1.18
+    countries = [mapped, unmapped]
+    fig, ax = _build_figure(countries, max_val)
+    try:
+        texts = _make_labels(ax, countries, max_val)
+
+        drawn = [t.get_text() for t in texts]
+        assert drawn[0] == expected, (
+            f"DEFECT: {mapped!r} rendered as {drawn[0]!r} -- the "
+            f"configured short name {expected!r} was not applied, "
+            f"so the label must shrink instead of abbreviating"
+        )
+        assert drawn[1] == unmapped, (
+            f"DEFECT: {unmapped!r} has no configured short name and "
+            f"must keep its full text, got {drawn[1]!r}"
+        )
+    finally:
+        plt.close(fig)
+
+
+def test_name_never_overlaps_its_own_value():
+    """A label must stop short of the number that belongs to it.
+
+    A name is left-anchored at a fixed x while its value rides the
+    bar tip, so a long name printed straight through its own
+    number.  Measured on the published-style frame: "Turks and
+    Caicos Islands" ended at x=672px while its "$7" began at
+    x=524px -- 148px of overlap, the value sitting on the text.
+
+    The guard is fitted against each row's SMALLEST value (the
+    leftmost its number ever reaches), so the clearance holds on
+    every frame of the animation, not just the last one.
+    """
+    countries = list(REVERSAL_COUNTRIES)
+    years = sorted(REVERSAL_RANKS)
+
+    data = pd.DataFrame(
+        {
+            year: [
+                float(10 - REVERSAL_RANKS[year][c])
+                for c in countries
+            ]
+            for year in years
+        },
+        index=countries,
+    )
+
+    # Same headroom the renderer applies, so the fixture measures
+    # the axis limit the real chart actually uses.
+    max_val = float(data.max().max()) * 1.18
+
+    indicator = "GDP per capita (current US$)"
+
+    def _place_values():
+        out = []
+        for index, country in enumerate(countries):
+            value = float(data.loc[country, years[-1]])
+            text = ax.text(
+                0, index, "",
+                va="center", ha="left",
+                fontsize=VisualEngine.VALUE_FONT_SIZE,
+                fontweight="bold", clip_on=False,
+            )
+            text.set_text(
+                VisualEngine._format_value(value, indicator)
+            )
+            text.set_x(
+                VisualEngine._bar_width(value, max_val)
+                + max_val * 0.012
+            )
+            out.append(text)
+        return out
+
+    fig, ax = _build_figure(countries, max_val)
+    try:
+        texts = _make_labels(ax, countries, max_val)
+        values = _place_values()
+
+        # Sanity: without the guard the long label really does
+        # collide with its own value, so this test has teeth.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        collided = []
+        for index, text in enumerate(texts):
+            box = text.get_window_extent(renderer=renderer)
+            vbox = values[index].get_window_extent(renderer=renderer)
+            if vbox.x0 < box.x1:
+                collided.append(text.get_text())
+        assert collided, (
+            "fixture broken: nothing collided before the guard, so "
+            "this test cannot prove the guard does anything"
+        )
+
+        bases = VisualEngine._fit_labels_in_frame(
+            fig, ax, texts,
+            font_bump=VisualEngine.LABEL_FONT_BUMP,
+        )
+        bases, caps = VisualEngine._fit_labels_clear_of_values(
+            fig, ax, texts, countries, data, years, max_val,
+            pad_px=design_system.VALUE_SAFE_MARGIN_PX,
+            base_fonts=bases,
+            font_bump=VisualEngine.LABEL_FONT_BUMP,
+        )
+
+        assert len(caps) == len(bases)
+        for base, cap in zip(bases, caps):
+            assert cap >= base, (
+                f"ceiling {cap}pt is below the base {base}pt"
+            )
+
+        # Every emphasis size the animation can apply must clear.
+        # The renderer clamps the bump to the label's own ceiling,
+        # so that is what is measured here.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        for index, text in enumerate(texts):
+            for bump in range(VisualEngine.LABEL_FONT_BUMP + 1):
+                text.set_fontsize(min(bases[index] + bump, caps[index]))
+                fig.canvas.draw()
+
+                box = text.get_window_extent(renderer=renderer)
+                vbox = values[index].get_window_extent(
+                    renderer=renderer
+                )
+                assert vbox.x0 >= box.x1, (
+                    f"DEFECT: {text.get_text()!r} at bump +{bump} "
+                    f"ends at x={box.x1:.1f}px but its own value "
+                    f"{values[index].get_text()!r} starts at "
+                    f"x={vbox.x0:.1f}px -- "
+                    f"{box.x1 - vbox.x0:.1f}px of overlap"
+                )
+
+            text.set_fontsize(bases[index])
+    finally:
+        plt.close(fig)
+
+
+def test_header_year_and_source_do_not_collide():
+    """The big year counter and the credit line need real air.
+
+    Measured on the published-style frame: "2022" spanned
+    y=1460..1581 while "Source: World Bank" spanned y=1541..1578 --
+    40px of overlap, the credit printed inside the year's digits.
+    The race header must keep both inside the frame-safe band with
+    genuine clearance between them.
+    """
+    # The credit must sit BELOW the year (smaller fig-y), because
+    # the year is the visual anchor of the composition.
+    assert VisualEngine.RACE_SOURCE_Y < VisualEngine.YEAR_Y, (
+        f"DEFECT: race source y={VisualEngine.RACE_SOURCE_Y} is not "
+        f"below the year y={VisualEngine.YEAR_Y}"
+    )
+
+    fig = plt.figure(figsize=(10.8, 19.2), dpi=100)
+    try:
+        height = float(fig.get_figheight()) * float(fig.dpi)
+
+        year = fig.text(
+            VisualEngine.YEAR_X, VisualEngine.YEAR_Y, "2022",
+            ha="center", va="center",
+            fontsize=VisualEngine.YEAR_SIZE, fontweight="bold",
+        )
+        source = fig.text(
+            0.5, VisualEngine.RACE_SOURCE_Y,
+            "Source: World Bank",
+            ha="center", va="center",
+            fontsize=VisualEngine.SOURCE_SIZE, style="italic",
+        )
+
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
+        ybox = year.get_window_extent(renderer=renderer)
+        sbox = source.get_window_extent(renderer=renderer)
+
+        gap = float(ybox.y0) - float(sbox.y1)
+        assert gap >= 8.0, (
+            f"DEFECT: only {gap:.1f}px between the year's bottom "
+            f"(y={ybox.y0:.1f}) and the source's top "
+            f"(y={sbox.y1:.1f})"
+        )
+
+        # Both stay inside the frame.
+        assert float(ybox.y1) <= height, "year runs off the top"
+        assert float(sbox.y0) >= 0.0, "source runs off the bottom"
+    finally:
+        plt.close(fig)
 
 
 # =================================================================
@@ -475,23 +814,24 @@ def _render_with_capture(tmp_path, countries, years):
             ax = self.fig.axes[0]
             n = len(countries)
 
-            # Country labels are the artists whose text is an
-            # entity name; value texts are the formatted numbers.
-            names = [t.get_text() for t in ax.texts]
-            label_idx = [
-                i for i, text in enumerate(names)
-                if text in countries
-            ]
-            assert len(label_idx) == n, (
-                f"expected {n} country labels, found {len(label_idx)} "
-                f"in {names}"
+            # The renderer creates, per entity, one value text and
+            # one name text in a fixed order, so the texts arrive as
+            # alternating [value, name] pairs.  Identifying a label
+            # by matching its TEXT against the entity names used to
+            # work, but the full-width layout now draws the
+            # CONFIGURED SHORT NAME (and may ellipsise a label that
+            # still cannot clear its own value), so the drawn string
+            # is no longer the raw entity name.  Position is the
+            # stable identity; every second artist is a name.
+            texts = list(ax.texts)
+            assert len(texts) == 2 * n, (
+                f"expected {2 * n} texts (one value + one name per "
+                f"entity), found {len(texts)}: "
+                f"{[t.get_text() for t in texts]}"
             )
 
-            labels = [ax.texts[i] for i in label_idx]
-            value_texts = [
-                t for t in ax.texts
-                if t.get_text() not in countries
-            ]
+            value_texts = texts[0::2]
+            labels = texts[1::2]
 
             frames.append(
                 {
@@ -509,6 +849,8 @@ def _render_with_capture(tmp_path, countries, years):
                         for t in labels
                     ],
                     "label_names": [t.get_text() for t in labels],
+                    # The entity each label belongs to, in row order.
+                    "label_entities": list(countries),
                 }
             )
 
@@ -579,11 +921,30 @@ def test_defect_a_and_b_render_bar_race_holds_every_frame(tmp_path):
             f"frame {number}: {len(frame['label_names'])} country "
             f"labels, expected {n}"
         )
-        assert sorted(frame["label_names"]) == sorted(countries), (
-            f"frame {number}: retained entities changed -- "
-            f"{frame['label_names']}"
-        )
-
+        # The DRAWN label is not always the raw entity name: the
+        # configured short name is substituted where one exists, and
+        # a label that still cannot clear its own value is
+        # ellipsised.  Both are intentional, so identity is checked
+        # on row order (stable) and each drawn label must still be
+        # recognisably its own entity -- either the full name, its
+        # configured short form, or a truncation of one of those.
+        assert len(frame["label_names"]) == n
+        expected_drawn = [
+            design_system.short_name(c) for c in countries
+        ]
+        for entity, drawn, full in zip(
+            frame["label_entities"],
+            frame["label_names"],
+            expected_drawn,
+        ):
+            assert drawn == full or full.startswith(
+                drawn.rstrip(".")
+            ) or drawn.rstrip(".").startswith(
+                entity[: max(4, len(drawn.rstrip('.')))]
+            ), (
+                f"frame {number}: label {drawn!r} does not belong "
+                f"to {entity!r} (expected {full!r})"
+            )
         # Every retained label keeps its own row, every frame.
         rows = sorted(frame["label_y"])
         gaps = [
@@ -596,9 +957,11 @@ def test_defect_a_and_b_render_bar_race_holds_every_frame(tmp_path):
             f"(gap {worst:.4f}); rows={frame['label_y']}"
         )
 
-        # The long label is never restored to the unfitted size:
-        # that per-frame reset is what pushed it (and its flag)
-        # off the left edge for the whole video.
+        # The long label is never restored to the unfitted size.
+        # That per-frame reset is what pushed it (and its flag)
+        # off the left edge for the whole video; on the full-width
+        # layout the same reset would print it straight through
+        # its own value, so the fitted size must hold every frame.
         assert frame["label_fonts"][long_index] < base_font, (
             f"DEFECT B: frame {number} restored {LONG_LABEL!r} to "
             f"{frame['label_fonts'][long_index]}pt (unfitted "

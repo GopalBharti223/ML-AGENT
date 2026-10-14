@@ -143,7 +143,7 @@ class VisualEngine:
     # BAR
     # =========================================================
 
-    BAR_HEIGHT = 0.48
+    BAR_HEIGHT = float(getattr(settings, "BAR_HEIGHT", 0.62))
 
     # Never draw a bar narrower than this fraction of the current
     # axis maximum.  Prevents an entity with a genuinely tiny value
@@ -228,29 +228,54 @@ class VisualEngine:
     _MULTI_COLOR_MODE: bool = False
 
     # =========================================================
-    # STEP 4 — SHORTS LAYOUT
+    # STEP 4 — SHORTS LAYOUT (safe zones)
     # =========================================================
 
-    CHART_LEFT = 0.37
-    CHART_BOTTOM = 0.20
-    CHART_WIDTH = 0.57
-    CHART_HEIGHT = 0.53
+    # The safe-zone margins are reserved for the YouTube Shorts
+    # player chrome (like/comment buttons, caption bar, handle)
+    # at the top, bottom and right.  Everything important draws
+    # INSIDE chart_frame().
+    # Bar-race chart frame: the chart fills the usable band minus
+    # a header strip reserved for title + year (vertical_span
+    # shrinks and re-centres the band).  Header budget (fig frac),
+    # top-down: title 0.915 va=top (1 line -> bottom 0.870);
+    # year centre 0.826 (72pt, spans 0.795..0.858); race source
+    # centre 0.7755 (22pt, spans 0.766..0.785); chart top 0.7576.
+    # The year and the source line used to sit on top of each
+    # other (measured 40px of overlap): the source now drops
+    # below the year, with ~18px of air on both sides.
+    CHART_LEFT, CHART_BOTTOM, CHART_WIDTH, CHART_HEIGHT = (
+        design_system.chart_frame(vertical_span=0.80)
+    )
 
-    TITLE_Y = 0.935
-    # Mobile legibility: label/number sizes come from config
-    # (FONT_TITLE / FONT_YEAR / FONT_COUNTRY / FONT_VALUE env
-    # overrides) so small text is readable on a phone screen.
+    TITLE_Y = 0.915
     TITLE_SIZE = settings.FONT_TITLE
 
-    YEAR_X = 0.84
-    YEAR_Y = 0.805
     YEAR_SIZE = settings.FONT_YEAR
+    YEAR_X = 0.50
+    YEAR_Y = 0.826
 
-    SOURCE_Y = 0.075
-    SOURCE_SIZE = 18
+    # Footer credit for the bar race (between chart bottom 0.242
+    # and the bottom safe line 0.22).  The shared SOURCE_Y below
+    # is the header placement used by _create_figure renderers,
+    # which have no giant year counter to clear.
+    FOOTER_Y = 0.232
+
+    SOURCE_Y = 0.812
+    SOURCE_SIZE = settings.FONT_SOURCE
+
+    # Bar-race-only header source line, placed UNDER the year
+    # counter so the two never collide (see the header budget
+    # above).  Kept separate from SOURCE_Y so the other seven
+    # renderers keep their existing chrome position.
+    RACE_SOURCE_Y = 0.7755
 
     COUNTRY_FONT_SIZE = settings.FONT_COUNTRY
     VALUE_FONT_SIZE = settings.FONT_VALUE
+
+    # Minimum on-screen font size in pixels.  Auto-fit and
+    # ellipsis keep every label at or above this floor.
+    MIN_FONT_PX = settings.UI_MIN_FONT_PX
 
     # =========================================================
     # STEP 5 — PACING
@@ -937,6 +962,159 @@ class VisualEngine:
         return grown
 
     @staticmethod
+    def _fit_labels_clear_of_values(
+        fig,
+        ax,
+        name_texts,
+        countries,
+        data,
+        years,
+        max_val,
+        pad_px: float = 20.0,
+        base_fonts=None,
+        font_bump: float = 0.0,
+    ):
+        """Shrink each above-bar NAME so it stops short of its own VALUE.
+
+        Part 1 protects the label's LEFT edge and Part 2 the value's
+        RIGHT edge, but nothing protected the MIDDLE: a name is
+        left-anchored at a fixed x while its value rides the bar
+        tip, so a long name printed straight through its own number.
+        Measured on the published-style frame, "Turks and Caicos
+        Islands" ended at x=672px while its "$7" began at x=524px --
+        148px of overlap.
+
+        The tip is LEFTMOST at a row's SMALLEST value across the
+        animation, so each name is fitted against that worst case
+        and the clearance then holds on every frame, not just the
+        last one.
+
+        Configured short names (UI_SHORT_NAME_MAP) are applied here
+        too, so a curated abbreviation is used INSTEAD of shrinking
+        a known-long name; entities with no configured short form
+        keep their full text and shrink exactly as before.
+
+        Returns a ``(bases, maxes)`` pair, both parallel to
+        `name_texts`: `bases` are the fitted BASE sizes and `maxes`
+        the largest size each label may ever be drawn at.  The two
+        differ only when a label bottoms out at the legibility
+        floor and can no longer afford the emphasis bump -- see
+        below.
+        """
+
+        sizes = [
+            float(text.get_fontsize())
+            for text in name_texts
+        ]
+
+        if base_fonts and len(base_fonts) == len(name_texts):
+            sizes = [float(size) for size in base_fonts]
+
+        maxes = [
+            size + float(font_bump) for size in sizes
+        ]
+
+        if not name_texts:
+            return sizes, maxes
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return sizes, maxes
+
+        family = design_system.text_family()
+
+        for index, country in enumerate(countries):
+
+            if index >= len(name_texts):
+                break
+
+            # Worst case = the row's smallest value anywhere in the
+            # animation, because that is where its tip (and hence
+            # its number) sits furthest LEFT.
+            try:
+                raw = [
+                    float(data.loc[country, year])
+                    for year in years
+                ]
+                worst = min(value for value in raw if value == value)
+            except Exception:
+                continue
+
+            tip_x = (
+                VisualEngine._bar_width(worst, max_val)
+                + max_val * 0.012
+            )
+
+            try:
+                tip_px = float(
+                    ax.transData.transform((tip_x, 0.0))[0]
+                )
+                label_x0 = float(
+                    name_texts[index]
+                    .get_window_extent(renderer=renderer)
+                    .x0
+                )
+            except Exception:
+                continue
+
+            budget_px = tip_px - float(pad_px) - label_x0
+
+            if budget_px <= 0:
+                continue
+
+            label = design_system.short_name(country)
+
+            # Largest size this label can be drawn at and still
+            # clear its own value -- fitted from the size the
+            # animation would emphasise it to, so the per-frame
+            # leader / overtake bump can never re-open the gap.
+            ceiling = design_system.fit_fontsize(
+                label,
+                budget_px,
+                design_system.pt_to_px(
+                    sizes[index] + float(font_bump)
+                ),
+                family,
+                "bold",
+            )
+
+            base = max(
+                design_system.min_pt(),
+                float(ceiling) - float(font_bump),
+            )
+
+            # A label that cannot clear its own value even at the
+            # legibility floor keeps its FULL text at that floor --
+            # the emphasis bump is capped away (base == ceiling ==
+            # floor) instead of the name being ellipsised.  Identity
+            # always outranks a cosmetic size bump: hiding a
+            # country's name to dodge a collision is never the
+            # right trade.  On the rare frame where a bar is so
+            # short that the full floor-size name grazes its number,
+            # the visible full name is still preferred over a
+            # truncated one.
+            if float(ceiling) <= design_system.min_pt() + 1e-9:
+                ceiling = design_system.min_pt()
+                base = design_system.min_pt()
+
+            name_texts[index].set_text(label)
+            name_texts[index].set_fontsize(base)
+            sizes[index] = base
+            maxes[index] = max(base, float(ceiling))
+
+        for text, size in zip(name_texts, sizes):
+            text.set_fontsize(size)
+
+        try:
+            fig.canvas.draw()
+        except Exception:
+            pass
+
+        return sizes, maxes
+
+    @staticmethod
     def _max_label_anchor_data_x(
         fig,
         ax,
@@ -1213,14 +1391,28 @@ class VisualEngine:
                 ],
             }
 
+    # =========================================================
+    # THEME RESOLUTION (Phase 1)
+    #
+    # build_theme()/theme_for() advance the persistent rotation
+    # cursor, so the theme must be resolved EXACTLY ONCE per
+    # video -- in select_palette(), which render_scenes() calls
+    # once.  Every renderer reads this cache; none of them may
+    # call active_theme() directly.
+    # =========================================================
+
+    _THEME: dict = {}
+
     @classmethod
     def select_palette(cls, script=None):
         """Choose the active bar palette for ONE video.
 
-        1. Themed palette when title/topic/category matches a
-           palette keyword group.
-        2. Otherwise rotate the cursor through every palette so
-           consecutive videos differ.
+        Theme first: the per-topic theme (8 topics, rotation
+        cursor advanced exactly once here) provides the ramp,
+        leader accent and background tokens cached on the class.
+
+        Falls back to the legacy keyword/rotation palettes when
+        themes are disabled or the theme carries no ramp.
 
         Returns the active palette list (also stored on
         _ACTIVE_PALETTE for _get_bar_color).
@@ -1233,6 +1425,36 @@ class VisualEngine:
             or next(iter(cls._PALETTES.values()))
         )
 
+        # -----------------------------------------------------
+        # THEME PATH -- resolve once, cache everywhere.
+        # -----------------------------------------------------
+        if getattr(settings, "UI_THEME_ENABLED", True):
+
+            haystack = ""
+
+            if script is not None:
+                for attr in (
+                    "title", "topic", "category", "topic_family"
+                ):
+                    value = getattr(script, attr, "")
+                    haystack += " " + str(value or "").lower()
+
+            theme = design_system.active_theme(haystack)
+            cls._THEME = theme
+
+            ramp = [
+                str(c) for c in (theme.get("ramp") or [])
+                if c
+            ]
+
+            if ramp:
+                cls._ACTIVE_PALETTE = ramp
+                cls._ACTIVE_PALETTE_NAME = "theme"
+                return ramp
+
+        # -----------------------------------------------------
+        # LEGACY PATH (theme disabled / theme without ramp)
+        # -----------------------------------------------------
         if not getattr(settings, "PALETTE_ROTATION_ENABLED", True):
             cls._ACTIVE_PALETTE = fallback
             cls._ACTIVE_PALETTE_NAME = "default"
@@ -1803,21 +2025,7 @@ class VisualEngine:
         # FIGURE
         # =====================================================
 
-        plt.rcParams[
-            "figure.facecolor"
-        ] = VisualEngine.BG_COLOR
-
-        plt.rcParams[
-            "axes.facecolor"
-        ] = VisualEngine.BG_COLOR
-
-        plt.rcParams[
-            "text.color"
-        ] = VisualEngine.TEXT_COLOR
-
-        plt.rcParams[
-            "font.family"
-        ] = "DejaVu Sans"
+        VisualEngine._set_chart_style()
 
         fig = plt.figure(
             figsize=(10.8, 19.2),
@@ -2007,10 +2215,56 @@ class VisualEngine:
 
         # =====================================================
         # TEXT
+        #
+        # Phase 1 layout: entity names sit ABOVE their bars
+        # (left-aligned just inside the chart), rank badges live
+        # in the left inset as FIGURE texts (so the axes-text
+        # contract -- one name + one value per entity -- is
+        # preserved), values stay at the bar tip but are clamped
+        # left of the RIGHT SAFE ZONE.
         # =====================================================
 
         value_texts = []
         name_texts = []
+
+        # Pixel geometry for the label fit.
+        _FIG_W = 1080.0
+        _FIG_H = 1920.0
+        _AXES_LEFT_PX = VisualEngine.CHART_LEFT * _FIG_W
+        _AXES_W_PX = VisualEngine.CHART_WIDTH * _FIG_W
+        _AXES_H_PX = VisualEngine.CHART_HEIGHT * _FIG_H
+
+        # Flag hangs left of the label: reserve its width + the
+        # 6pt offset so flag AND label start inside the left
+        # safe zone.
+        _FLAG_GAP_PX = 8.3          # 6pt at dpi=100
+        _name_x0_px = (
+            _AXES_LEFT_PX
+            + float(VisualEngine._FLAG_SIZE[0]) * VisualEngine.FLAG_ZOOM
+            + _FLAG_GAP_PX
+            + 6.0
+        )
+        _name_x_data = max_val * (
+            (_name_x0_px - _AXES_LEFT_PX) / _AXES_W_PX
+        )
+
+        # Names may run right up to the RIGHT SAFE ZONE.
+        _name_budget_px = (
+            design_system.safe_right() * _FIG_W - _name_x0_px
+        )
+
+        # Vertical budget: the gap between two bars.  Names live
+        # in it, so the font can never outgrow it.
+        _n_entities = len(countries)
+        _span = _n_entities + max(
+            0.0, (4 if _n_entities >= 3 else 3) - _n_entities
+        )
+        _unit_px = _AXES_H_PX / max(1.0, _span)
+        _gap_px = _unit_px * (1.0 - VisualEngine.BAR_HEIGHT)
+        _name_start_px = min(
+            design_system.pt_to_px(VisualEngine.COUNTRY_FONT_SIZE),
+            max(24.0, _gap_px * 0.80),
+        )
 
         for country in countries:
 
@@ -2041,14 +2295,32 @@ class VisualEngine:
                 value_text
             )
 
+            # Auto-fit: width budget + vertical gap cap, never
+            # below the legibility floor (fit_fontsize enforces
+            # it).  The CONFIGURED SHORT NAME is measured and
+            # drawn here, before any fitting, so a curated
+            # abbreviation ("DR Congo") is used instead of
+            # shrinking a known-long name.  Entities with no
+            # configured short form keep their full text and
+            # shrink exactly as before.
+            label_name = design_system.short_name(country)
+
+            name_font_pt = design_system.fit_fontsize(
+                label_name,
+                _name_budget_px,
+                _name_start_px,
+                design_system.text_family(),
+                "bold",
+            )
+
             name_text = ax.text(
-                -max_val * 0.055,
+                _name_x_data,
                 rank,
-                country,
-                va="center",
-                ha="right",
+                label_name,
+                va="bottom",
+                ha="left",
                 color=VisualEngine.TEXT_COLOR,
-                fontsize=VisualEngine.COUNTRY_FONT_SIZE,
+                fontsize=name_font_pt,
                 fontweight="bold",
                 clip_on=False
             )
@@ -2060,6 +2332,15 @@ class VisualEngine:
             name_texts.append(
                 name_text
             )
+
+        label_base_fonts = [
+            float(t.get_fontsize()) for t in name_texts
+        ]
+
+        # Vertical offset (data units) from a row's centre to the
+        # baseline of the name above its bar.
+        NAME_ROW_GAP = 0.06
+
 
         # ---------------------------------------------
         # LABEL FIT GUARD: long names ("Turks and Caicos
@@ -2166,6 +2447,78 @@ class VisualEngine:
             pass
 
         # ---------------------------------------------
+        # NAME / VALUE CLEARANCE (the middle gap).
+        #
+        # Part 1 protects a name's LEFT edge and Part 2 the
+        # value's RIGHT edge, but the space BETWEEN them was
+        # unguarded: a name is left-anchored at a fixed x while
+        # its number rides the bar tip, so a long name printed
+        # straight through its own value.  Measured on the
+        # published-style frame: "Turks and Caicos Islands" ended
+        # at x=672px while its "$7" began at x=524px -- 148px of
+        # overlap, the number sitting on top of the text.
+        #
+        # Fitted against each row's SMALLEST value (the leftmost
+        # its tip, and therefore its number, ever reaches), so the
+        # clearance holds on every frame rather than only the
+        # last.  Configured short names are applied here as well,
+        # so a curated abbreviation is used instead of shrinking a
+        # known-long name below the intended 34pt.
+        #
+        # Runs AFTER the value-headroom guard so it measures
+        # against the FINAL x-limit, and BEFORE the flags so the
+        # icons anchor off the post-fit extents.
+        # ---------------------------------------------
+        # Largest size each label may ever be drawn at.  Normally
+        # base + LABEL_FONT_BUMP, but a label that bottoms out at
+        # the legibility floor cannot afford the emphasis bump
+        # without running into its own value, so its ceiling is
+        # capped instead.  Defaulted here so the per-frame loop
+        # below is safe even if the guard is skipped.
+        label_max_fonts = [
+            size + VisualEngine.LABEL_FONT_BUMP
+            for size in label_base_fonts
+        ]
+
+        try:
+            label_base_fonts, label_max_fonts = (
+                VisualEngine._fit_labels_clear_of_values(
+                    fig,
+                    ax,
+                    name_texts,
+                    countries,
+                    data,
+                    years,
+                    max_val,
+                    pad_px=(
+                        design_system.VALUE_SAFE_MARGIN_PX
+                    ),
+                    base_fonts=label_base_fonts,
+                    font_bump=VisualEngine.LABEL_FONT_BUMP,
+                )
+            )
+        except Exception as clear_error:
+            print(
+                f"⚠️ Name/value clearance guard skipped "
+                f"({type(clear_error).__name__}: "
+                f"{clear_error})."
+            )
+
+        if (
+            not label_base_fonts
+            or len(label_base_fonts)
+            != len(name_texts)
+        ):
+            label_base_fonts = [
+                float(text.get_fontsize())
+                for text in name_texts
+            ]
+            label_max_fonts = [
+                size + VisualEngine.LABEL_FONT_BUMP
+                for size in label_base_fonts
+            ]
+
+        # ---------------------------------------------
         # COUNTRY FLAG ICONS (beside each label)
         # Per-country try: one bad flag must not strip
         # the flags off every other bar.
@@ -2205,6 +2558,20 @@ class VisualEngine:
                 fig,
                 name_texts,
                 flag_boxes,
+                label_base_fonts,
+            )
+        )
+
+        # Vertical partner of flag_anchors: how far ABOVE its row a
+        # flag must sit to land on its label's centre.  Without
+        # this the per-frame xy assignment below pins every icon to
+        # the row itself, i.e. the label's BOTTOM edge, and the
+        # icon reads half a line too low.
+        flag_v_offsets = (
+            VisualEngine._flag_vertical_offsets(
+                ax,
+                fig,
+                name_texts,
                 label_base_fonts,
             )
         )
@@ -2303,7 +2670,10 @@ class VisualEngine:
 
         source_text = fig.text(
             0.5,
-            VisualEngine.SOURCE_Y,
+            # RACE_SOURCE_Y, not SOURCE_Y: the bar race carries a
+            # 72pt year counter, so its credit line drops below
+            # the year instead of sitting on top of it.
+            VisualEngine.RACE_SOURCE_Y,
             f"Source: {script.source_name}",
             ha="center",
             va="center",
@@ -2915,9 +3285,36 @@ class VisualEngine:
                         ):
                             anchor_x = row[bump]
 
+                    # Centre the icon on its label, not on the
+                    # row: the label sits ABOVE its bar, so the
+                    # row y is the label's bottom edge.  The
+                    # offset is measured per label at the exact
+                    # font size applied on this frame.
+                    anchor_y = label_positions[i]
+
+                    v_row = (
+                        flag_v_offsets[i]
+                        if i < len(flag_v_offsets)
+                        else None
+                    )
+
+                    if v_row:
+                        bump = (
+                            2 if is_overtake
+                            else (1 if is_leader else 0)
+                        )
+                        if (
+                            bump < len(v_row)
+                            and v_row[bump] is not None
+                        ):
+                            anchor_y = (
+                                label_positions[i]
+                                + v_row[bump]
+                            )
+
                     flag_boxes[i].xy = (
                         anchor_x,
-                        label_positions[i]
+                        anchor_y
                     )
 
                 # ---------------------------------------------
@@ -2930,14 +3327,27 @@ class VisualEngine:
                 # unfitted size here each frame is what pushed
                 # long labels (and their flags) off the left
                 # edge for the whole video.
+                #
+                # The result is CLAMPED to label_max_fonts[i],
+                # the largest size that still clears the label's
+                # own value.  A label that bottomed out at the
+                # legibility floor has no room for the bump, so
+                # its emphasis comes from the COLOUR change
+                # alone -- never from growing into its number.
                 # ---------------------------------------------
 
                 base_font = label_base_fonts[i]
+                font_cap = (
+                    label_max_fonts[i]
+                    if i < len(label_max_fonts)
+                    else base_font
+                    + VisualEngine.LABEL_FONT_BUMP
+                )
 
                 if is_overtake:
 
                     name_texts[i].set_fontsize(
-                        base_font + 2
+                        min(base_font + 2, font_cap)
                     )
 
                     name_texts[i].set_color(
@@ -2953,7 +3363,7 @@ class VisualEngine:
                 elif is_leader:
 
                     name_texts[i].set_fontsize(
-                        base_font + 1
+                        min(base_font + 1, font_cap)
                     )
 
                     name_texts[i].set_color(
@@ -3573,9 +3983,17 @@ class VisualEngine:
             "text.color"
         ] = VisualEngine.TEXT_COLOR
 
+        # Bundled Montserrat/Inter (registered once by
+        # app.visuals.fonts); degrades to DejaVu Sans.
+        try:
+            from app.visuals import fonts as _fonts
+            _fonts.register_fonts()
+        except Exception:
+            pass
+
         plt.rcParams[
             "font.family"
-        ] = "DejaVu Sans"
+        ] = design_system.text_family()
 
     # =========================================================
     # BACKGROUND GRADIENT + VIGNETTE
@@ -3588,126 +4006,32 @@ class VisualEngine:
         pulse_frame=0,
         total_frames=1
     ):
-        """
-        Draw a vertical gradient background and a
-        subtle vignette overlay on the figure.
+        """Paint the themed cinematic background.
 
-        The gradient goes from BG_GRADIENT_TOP (top)
-        to BG_GRADIENT_BOTTOM (bottom).
+        Phase 1: delegates to design_system.paint_background(),
+        which layers the per-topic vertical gradient, radial
+        accent glows (12-18% alpha) and a light vignette on a
+        dedicated full-figure axes at zorder=-10 (behind the
+        chart, never animated).  Falls back to a flat canvas
+        fill if the theme is missing.
 
-        A slow pulse effect shifts the gradient colors
-        by a small amount based on the frame number,
-        creating a living background.
-
-        The vignette darkens the edges to draw the
-        viewer's eye toward the center of the chart.
+        Signature kept compatible with the legacy gradient
+        caller (pulse args ignored -- background is static).
         """
 
-        # -------------------------------------------------
-        # Static premium gradient (no pulsing)
-        # -------------------------------------------------
+        theme = VisualEngine._THEME or None
 
-        pulse = 0.0
-
-        # Interpolate between top and bottom colors
-        # with a subtle pulse offset
-
-        top_rgb = np.array(
-            [
-                int(
-                    VisualEngine.BG_GRADIENT_TOP[1:3],
-                    16
-                ),
-                int(
-                    VisualEngine.BG_GRADIENT_TOP[3:5],
-                    16
-                ),
-                int(
-                    VisualEngine.BG_GRADIENT_TOP[5:7],
-                    16
-                ),
-            ],
-            dtype=float
-        )
-
-        bottom_rgb = np.array(
-            [
-                int(
-                    VisualEngine.BG_GRADIENT_BOTTOM[1:3],
-                    16
-                ),
-                int(
-                    VisualEngine.BG_GRADIENT_BOTTOM[3:5],
-                    16
-                ),
-                int(
-                    VisualEngine.BG_GRADIENT_BOTTOM[5:7],
-                    16
-                ),
-            ],
-            dtype=float
-        )
-
-        # Apply pulse offset
-        top_rgb = np.clip(
-            top_rgb + pulse * 8,
-            0,
-            255
-        )
-        bottom_rgb = np.clip(
-            bottom_rgb + pulse * 8,
-            0,
-            255
-        )
-
-        # -------------------------------------------------
-        # GRADIENT IMAGE
-        # -------------------------------------------------
-
-        height = 200
-
-        gradient = np.zeros(
-            (
-                height,
-                1,
-                3
+        try:
+            design_system.paint_background(fig, theme, strength=1.0)
+        except Exception as bg_error:
+            print(
+                f"⚠️ Theme background degraded "
+                f"({type(bg_error).__name__}: {bg_error})."
             )
-        )
-
-        for row in range(height):
-
-            ratio = row / max(
-                1,
-                height - 1
-            )
-
-            gradient[row, 0] = (
-                top_rgb
-                * (
-                    1
-                    - ratio
-                )
-                + bottom_rgb
-                * ratio
-            )
-
-        gradient = (
-            gradient
-            / 255.0
-        )
-
-        fig.figimage(
-            gradient,
-            xo=0,
-            yo=0,
-            alpha=1.0,
-            zorder=0
-        )
-
-        # -------------------------------------------------
-        # Clean finish: no vignette overlay — the smooth
-        # gradient alone keeps the frame premium.
-        # -------------------------------------------------
+            try:
+                fig.patch.set_facecolor(VisualEngine.BG_COLOR)
+            except Exception:
+                pass
 
     # =========================================================
     # LEADER BAR GLOW
@@ -3776,6 +4100,12 @@ class VisualEngine:
 
         for spine in ax.spines.values():
             spine.set_visible(False)
+
+        # Themed cinematic background (gradient + accent glow +
+        # vignette) on a dedicated axes at zorder=-10.  Added
+        # AFTER the chart axes so fig.axes[0] stays the chart --
+        # contract tests index it.
+        VisualEngine._draw_background(fig, ax)
 
         # Restrained depth behind the data: two soft glows in
         # figure space at zorder 0, tinted by the active topic
@@ -4387,6 +4717,89 @@ class VisualEngine:
         return anchors
 
     @staticmethod
+    def _flag_vertical_offsets(
+        ax,
+        fig,
+        name_texts,
+        base_fonts,
+    ):
+        """Per-label data-unit offset from a row's anchor y to the
+        label's own vertical CENTRE, at every font size the
+        animation applies.
+
+        Above-bar labels are va="bottom", so a row's y is the
+        label's BOTTOM edge.  Anchoring a flag on the row y parked
+        every icon half a label-height too low (measured 29px on a
+        34pt label); the icon has to sit on the label's centre
+        instead.  Measured once per label per size, so the
+        per-frame cost is a list index -- the same pattern
+        _flag_anchor_data_x uses for the horizontal edge.
+
+        Returns a list parallel to `name_texts`; each entry is
+        [base, +1, +2] or None when that label has no flag.
+        """
+
+        offsets = []
+
+        try:
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return [None for _ in name_texts]
+
+        try:
+            invert = ax.transData.inverted()
+        except Exception:
+            return [None for _ in name_texts]
+
+        for index, text in enumerate(name_texts):
+
+            base_pt = (
+                float(base_fonts[index])
+                if base_fonts
+                and index < len(base_fonts)
+                else float(text.get_fontsize())
+            )
+
+            row = []
+
+            for bump in range(
+                VisualEngine.LABEL_FONT_BUMP + 1
+            ):
+
+                try:
+                    text.set_fontsize(base_pt + bump)
+                    fig.canvas.draw()
+
+                    extent = text.get_window_extent(
+                        renderer=renderer
+                    )
+
+                    _, y_bottom = invert.transform(
+                        (0.0, extent.y0)
+                    )
+                    _, y_center = invert.transform(
+                        (0.0, (extent.y0 + extent.y1) / 2.0)
+                    )
+
+                    row.append(float(y_center - y_bottom))
+                except Exception:
+                    row.append(None)
+
+            try:
+                text.set_fontsize(base_pt)
+            except Exception:
+                pass
+
+            offsets.append(row)
+
+        try:
+            fig.canvas.draw()
+        except Exception:
+            pass
+
+        return offsets
+
+    @staticmethod
     def _attach_country_flag(ax, fig, country_name, label_text):
         """Place a small flag icon just left of a country's text label.
 
@@ -4420,9 +4833,22 @@ class VisualEngine:
             return None
 
         inv = ax.transData.inverted()
-        x_anchor, y_anchor = inv.transform(
+        x_anchor, y_bottom = inv.transform(
             (extent.x0, extent.y0)
         )
+
+        # Above-bar labels are va="bottom", so extent.y0 is the
+        # label's BOTTOM edge -- anchoring the icon there parked
+        # every flag half a label-height too low (measured 29px
+        # on a 34pt label).  Anchor on the label's vertical
+        # CENTRE instead, so flag and name read as one unit.
+        _, y_center = inv.transform(
+            (
+                extent.x0,
+                (extent.y0 + extent.y1) / 2.0,
+            )
+        )
+        y_anchor = y_center
 
         flag.image.axes = ax
         box = AnnotationBbox(
@@ -4431,6 +4857,8 @@ class VisualEngine:
             xybox=(-6, 0),
             xycoords="data",
             boxcoords="offset points",
+            # Right-middle: the icon's right edge sits 6pt left of
+            # the label, vertically centred on y_anchor.
             box_alignment=(1.0, 0.5),
             frameon=False,
             pad=0,

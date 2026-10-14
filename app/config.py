@@ -360,6 +360,120 @@ class Settings(BaseSettings):
         os.getenv("SHOW_CLOSING_LABEL", "true").lower() == "true"
     )
 
+    # =====================================================
+    # PREMIUM UI v2  (theme / font / safe-zone system)
+    #
+    # Every value below is env-overridable so the look can be
+    # tuned without touching code.  See app/visuals/theme.py
+    # (ThemeEngine) and app/visuals/fonts.py (font loader).
+    #
+    # SIZING CONTRACT: the canvas is 1080x1920 at dpi=100, so
+    # one PIXEL == 1/100 inch == 0.72 pt.  Font sizes are
+    # declared here in POINTS (matplotlib's unit); the px
+    # numbers in the comments are the delivered size.
+    # =====================================================
+
+    # Theme source.  "" = auto: keyword match on the topic,
+    # else rotate through every theme with a persistent cursor
+    # so two consecutive videos never share a theme.  Set to a
+    # theme key (world/economy/population/military/technology/
+    # health/sports/energy) to pin one look for every video.
+    UI_THEME_OVERRIDE: str = os.getenv("UI_THEME_OVERRIDE", "")
+
+    # Master switch for per-topic theming + cursor rotation.
+    UI_THEME_ENABLED: bool = (
+        os.getenv("UI_THEME_ENABLED", "true").lower() == "true"
+    )
+
+    # Background atmosphere strength, 0..1.  Scales the radial
+    # accent glow and the vignette.  The glow itself sits at
+    # UI_GLOW_ALPHA (the old 4-6% glow was effectively
+    # invisible; 12-18% reads as cinematic without washing out
+    # the chart).
+    UI_GLOW_ALPHA: float = float(os.getenv("UI_GLOW_ALPHA", "0.15"))
+    UI_VIGNETTE_ALPHA: float = float(
+        os.getenv("UI_VIGNETTE_ALPHA", "0.22")
+    )
+
+    # ---- Shorts safe zones (fractions of the canvas) ----
+    # YouTube overlays the right edge (like/comment/share rail),
+    # the top (handle/caption) and the bottom (title, handle,
+    # soundtrack).  Nothing important may be drawn inside them.
+    SAFE_ZONE_TOP: float = float(os.getenv("SAFE_ZONE_TOP", "0.08"))
+    SAFE_ZONE_BOTTOM: float = float(
+        os.getenv("SAFE_ZONE_BOTTOM", "0.22")
+    )
+    SAFE_ZONE_RIGHT: float = float(os.getenv("SAFE_ZONE_RIGHT", "0.14"))
+    # Left inset: keeps the rank badge / bar origin off the
+    # screen edge so the chart never reads as clipped.
+    SAFE_ZONE_LEFT: float = float(os.getenv("SAFE_ZONE_LEFT", "0.05"))
+
+    # ---- Chart frame (bar race / top5) ----
+    # Width as a fraction of the USABLE width (between the left
+    # inset and the right safe zone).  0.80 replaces the old
+    # 0.57-of-canvas chart that left dead space everywhere.
+    CHART_WIDTH_FRACTION: float = float(
+        os.getenv("CHART_WIDTH_FRACTION", "0.80")
+    )
+    # Bar thickness as a fraction of the row pitch (0..1).
+    # 0.62 gives a bold, readable bar with a clear gap.
+    BAR_HEIGHT: float = float(os.getenv("BAR_HEIGHT", "0.62"))
+
+    # ---- Legibility floor (1080-wide canvas, dpi=100) ----
+    # 1 px == 0.72 pt at dpi=100, so px == pt / 0.72 == pt * 1.389.
+    # Delivered minimums: title 70px, year 100px, entity 40px,
+    # value 44px, axis/legend 32px.  NOTHING may render below
+    # UI_MIN_FONT_PX; auto-fit stops there and ellipsises instead
+    # of shrinking further.
+    UI_MIN_FONT_PX: float = float(os.getenv("UI_MIN_FONT_PX", "30"))
+    FONT_AXIS: int = int(os.getenv("FONT_AXIS", "23"))
+    FONT_LEGEND: int = int(os.getenv("FONT_LEGEND", "26"))
+    FONT_BADGE: int = int(os.getenv("FONT_BADGE", "30"))
+    FONT_SOURCE: int = int(os.getenv("FONT_SOURCE", "22"))
+
+    # Font family names registered from assets/fonts/ (OFL).
+    # A missing file degrades to DejaVu Sans -- never a crash.
+    UI_FONT_TITLE: str = os.getenv("UI_FONT_TITLE", "Montserrat")
+    UI_FONT_TEXT: str = os.getenv("UI_FONT_TEXT", "Inter")
+
+    # Max lines the title may occupy inside the top safe zone.
+    UI_TITLE_MAX_LINES: int = int(os.getenv("UI_TITLE_MAX_LINES", "2"))
+
+    # Optional thin progress bar drawn just above the bottom
+    # safe zone; turns off cleanly if it ever risks clipping.
+    UI_SHOW_PROGRESS_BAR: bool = (
+        os.getenv("UI_SHOW_PROGRESS_BAR", "true").lower() == "true"
+    )
+
+    # Short-name map for long entity labels, JSON in .env:
+    #   {"Democratic Republic of the Congo": "DR Congo"}
+    # Applied BEFORE auto-fit, so a known long name never has to
+    # shrink or ellipsise.
+    UI_SHORT_NAME_MAP: str = os.getenv(
+        "UI_SHORT_NAME_MAP",
+        '{'
+        '"Democratic Republic of the Congo": "DR Congo",'
+        '"Central African Republic": "CAR",'
+        '"Bosnia and Herzegovina": "Bosnia",'
+        '"United Arab Emirates": "UAE",'
+        '"United Kingdom": "UK",'
+        '"United States of America": "USA",'
+        '"Papua New Guinea": "PNG",'
+        '"Saudi Arabia": "Saudi",'
+        '"South Korea": "S. Korea",'
+        '"North Korea": "N. Korea",'
+        '"Russian Federation": "Russia",'
+        '"Czech Republic": "Czechia",'
+        '"Dominican Republic": "Dominican Rep.",'
+        '"Trinidad and Tobago": "Trinidad",'
+        '"Antigua and Barbuda": "Antigua",'
+        '"Saint Vincent and the Grenadines": "St Vincent",'
+        '"Solomon Islands": "Solomon Is.",'
+        '"Equatorial Guinea": "Eq. Guinea",'
+        '"Guinea-Bissau": "G.-Bissau"'
+        '}'
+    )
+
     # -----------------------------------------------------
     # OPENING PAYOFF (retention)
     #
