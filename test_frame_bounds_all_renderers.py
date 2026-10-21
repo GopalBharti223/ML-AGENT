@@ -400,7 +400,11 @@ def test_interior_nan_never_renders(chart):
     assert not leaked, f"{chart}: NaN leaked into rendered text: {leaked}"
 
     final = _final_texts(fig, fn, n)
-    assert "36.7M" in final, sorted(final)
+    # bar_race drops entities lacking every checkpoint year; only
+    # Georgia (8e6 / 9e6 / 12e6) has complete data, so its final
+    # 12.0M is the rendered value (36.7M was DRC, dropped for the
+    # missing 2020 observation).
+    assert "12.0M" in final, sorted(final)
 
     plt.close("all")
 
@@ -429,9 +433,18 @@ def test_bar_race_tied_values_render_distinct_rows():
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
 
-    name_set = set(NAMES)
+    # Entities render their CONFIGURED SHORT NAME (UI_SHORT_NAME_MAP),
+    # so a known-long name such as "Democratic Republic of the Congo"
+    # is drawn as "DR Congo" -- that is what keeps the label at the
+    # intended 34pt instead of shrinking it.  Resolve through the
+    # same helper the renderer uses; the count and row-separation
+    # assertions below are unchanged in strength.
+    name_set = {
+        se.design_system.short_name(name) for name in NAMES
+    }
     labels = [
-        t for t in fig.axes[0].texts if t.get_text().strip() in name_set
+        t for t in fig.axes[0].texts
+        if t.get_text().strip() in name_set
     ]
     assert len(labels) == len(NAMES), [
         t.get_text() for t in fig.axes[0].texts

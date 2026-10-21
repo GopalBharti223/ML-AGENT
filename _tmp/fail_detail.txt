@@ -1,0 +1,89 @@
+﻿FF                                                                       [100%]
+================================== FAILURES ===================================
+_______________ test_bar_race_tied_values_render_distinct_rows ________________
+
+    def test_bar_race_tied_values_render_distinct_rows():
+        """Two entities with IDENTICAL values still get their own rows
+        (rank method='first') and both stay inside the frame."""
+        data = pd.DataFrame(
+            {
+                2018: [10e6, 10e6, 5e6, 8e6],
+                2020: [20e6, 20e6, 12e6, 9e6],
+                2022: [36.7e6, 36.7e6, 15e6, 12e6],
+            },
+            index=NAMES,
+        )
+        fig, fn, n = _capture("bar_race", data, duration=6.0)
+        width, height, offenders, seen = _scan_all(fig, fn, _steps(n))
+    
+        assert not offenders, f"off-frame -> {offenders}"
+    
+        fn(n - 1)
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+    
+        # Entities render their CONFIGURED SHORT NAME (UI_SHORT_NAME_MAP),
+        # so a known-long name such as "Democratic Republic of the Congo"
+        # is drawn as "DR Congo" -- that is what keeps the label at the
+        # intended 34pt instead of shrinking it.  Resolve through the
+        # same helper the renderer uses; the count and row-separation
+        # assertions below are unchanged in strength.
+        name_set = {
+            se.design_system.short_name(name) for name in NAMES
+        }
+        labels = [
+            t for t in fig.axes[0].texts
+            if t.get_text().strip() in name_set
+        ]
+>       assert len(labels) == len(NAMES), [
+            t.get_text() for t in fig.axes[0].texts
+        ]
+E       AssertionError: ['36.7M', 'DR...', '36.7M', 'Ire...', '15.0M', '...', ...]
+E       assert 0 == 4
+E        +  where 0 = len([])
+E        +  and   4 = len(['Democratic Republic of the Congo', 'Ireland', 'Guyana', 'Georgia'])
+
+test_frame_bounds_all_renderers.py:445: AssertionError
+---------------------------- Captured stdout call -----------------------------
+≡ƒÄ¿ Rendering Step 6 + Step 7 premium Shorts animation...
+≡ƒôè Chart bars (focus-guaranteed): Democratic Republic of the Congo, Ireland, Guyana, Georgia
+≡ƒÜ⌐ No flag for 'Democratic Republic of the Congo' -- text-only label.
+≡ƒÜ⌐ No flag for 'Ireland' -- text-only label.
+≡ƒÜ⌐ No flag for 'Guyana' -- text-only label.
+≡ƒÜ⌐ No flag for 'Georgia' -- text-only label.
+Γ£à Step 6 + Step 7 video saved: _pytest_part2_tmp\full_race.mp4
+________________ test_long_labels_stay_inside_frame[bar_race] _________________
+
+chart_type = 'bar_race'
+
+    @pytest.mark.parametrize("chart_type", FULL_LABEL_CHARTS)
+    def test_long_labels_stay_inside_frame(chart_type):
+        """Every complete entity label must fit the frame on every
+        frame -- including the exact regression case named in the
+        investigation report."""
+    
+        fig, fn, frames = _capture(
+            chart_type, LONG_NAMES, _payload(chart_type, LONG_NAMES)
+        )
+    
+        width, height, offenders, seen = _scan(
+            fig, fn, frames, LONG_NAMES
+        )
+    
+>       assert seen, f"{chart_type}: no entity labels were measured"
+E       AssertionError: bar_race: no entity labels were measured
+E       assert set()
+
+test_long_label_frame_safety.py:231: AssertionError
+---------------------------- Captured stdout call -----------------------------
+≡ƒÄ¿ Rendering Step 6 + Step 7 premium Shorts animation...
+≡ƒôè Chart bars (focus-guaranteed): Democratic Republic of the Congo, Turks and Caicos Islands, Bosnia and Herzegovina, Central African Republic
+≡ƒÜ⌐ No flag for 'Democratic Republic of the Congo' -- text-only label.
+≡ƒÜ⌐ No flag for 'Turks and Caicos Islands' -- text-only label.
+≡ƒÜ⌐ No flag for 'Bosnia and Herzegovina' -- text-only label.
+≡ƒÜ⌐ No flag for 'Central African Republic' -- text-only label.
+Γ£à Step 6 + Step 7 video saved: _pytest_label_tmp\full_race.mp4
+=========================== short test summary info ===========================
+FAILED test_frame_bounds_all_renderers.py::test_bar_race_tied_values_render_distinct_rows
+FAILED test_long_label_frame_safety.py::test_long_labels_stay_inside_frame[bar_race]
+2 failed in 47.23s

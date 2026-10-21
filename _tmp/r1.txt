@@ -1,0 +1,2000 @@
+﻿b
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib.patches as mpatches
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from matplotlib.ticker import MaxNLocator
+import numpy as np
+import pandas as pd
+import os
+import random
+
+from app.time_labels import coerce_year_label
+from app.config import settings
+from app.visuals import design_system
+
+
+class VisualEngine:
+
+
+    # =========================================================
+    # COLORS
+    # =========================================================
+
+    # -----------------------------------------------------
+    # PREMIUM PALETTE
+    #
+    # Navy-tinted deep canvas, ivory typography and a
+    # champagne-gold accent system. Constant names are
+    # kept for compatibility; only the values changed.
+    #
+    # BACKGROUND TONE (Part 3): was #0D1117 -- a near-pure
+    # neutral black with a barely-there blue cast (RGB
+    # 13/17/23, channels within 10 of each other), which read
+    # as flat "GitHub dark" charcoal and left the gold accents
+    # floating on a void.  Now #101A2C: still deep enough to
+    # stay OLED-friendly and to keep ivory text (#F5F2EA) at a
+    # ~17:1 contrast ratio, but LIFTED (+3/+9/+21) with the
+    # blue channel clearly dominant, so the canvas reads as a
+    # navy-tinted night blue that the champagne gold / azure
+    # bar palettes sit on rather than glare against.
+    # BG_GRADIENT_TOP is kept numerically EQUAL to BG_COLOR so
+    # the vignette starts exactly on the canvas colour.
+    # -----------------------------------------------------
+
+    BG_COLOR = "#101A2C"
+
+    TEXT_COLOR = "#F5F2EA"
+    SECONDARY_TEXT = "#9AA4B2"
+
+    ELECTRIC_BLUE = "#D4AF37"
+    BLUE_VIOLET = "#C39A45"
+    VIOLET = "#A67C33"
+    PURPLE = "#8C6626"
+    MAGENTA_PURPLE = "#E8C97A"
+
+    LEADER_COLOR = "#F0D48A"
+
+    # Step 6 emphasis
+    OVERTAKE_COLOR = "#FFF3D6"
+
+    # =========================================================
+    # ENHANCED VISUAL COLORS
+    # =========================================================
+
+    # Background gradient (top → bottom).  TOP mirrors
+    # BG_COLOR; BOTTOM keeps the original +8/+10/+16 step on
+    # the new navy base so the vignette is exactly as subtle
+    # as before, only tinted navy.
+    BG_GRADIENT_TOP = "#101A2C"
+    BG_GRADIENT_BOTTOM = "#18243C"
+
+    # Subtle grid lines
+    GRID_COLOR = "#222A36"
+
+    # Leader bar glow
+    LEADER_GLOW = "#D4AF37"
+
+    # Year transition flash
+    FLASH_COLOR = "#F5F2EA"
+
+
+    # =========================================================
+    # VIDEO
+    # =========================================================
+
+    FPS = 30
+
+    # =========================================================
+    # AUDIO-SYNCED TIMING
+    #
+    # When run.py passes the REAL measured narration length to
+    # render_scenes(), _duration_override carries (audio +
+    # AUDIO_TAIL_HOLD) and every renderer sizes its timeline
+    # from _effective_duration() instead of the planned
+    # script.total_duration.  The tail hold makes the video run
+    # slightly LONGER than the audio so the assembler trims
+    # padding -- never narration -- at the mux.
+    # =========================================================
+
+    # DEAD-AIR FIX (Issue 1, published-video review): this was a
+    # hard-coded 0.75s.  The hold exists only so the mux trims
+    # padding rather than the final syllable, and narration is
+    # already aggressively edge-trimmed
+    # (_trim_leading_silence / _trim_trailing_silence), so 0.75s
+    # was pure slack: the assembler has to fill the whole hold
+    # with tail_bridge_audio.mp3, which is 100% silence -- measured
+    # 0.73s of dead air sitting immediately before the outro card.
+    # Now sourced from settings (AUDIO_TAIL_HOLD_S, default 0.20s).
+    # MEASURED: at 0.25s the real render 20260924_195250 produced
+    # an exact 0.2395s bridge, and 0.24 + the narration's 0.02s
+    # kept tail = 0.26s -- still one detectable gap at the 0.25s
+    # floor.  At 0.20s the silent run is ~0.21s: below the floor,
+    # inaudible, and still ample slack for the mux.
+    AUDIO_TAIL_HOLD = float(
+        getattr(settings, "AUDIO_TAIL_HOLD_S", 0.20)
+    )
+
+    _duration_override: float = 0.0
+
+    @staticmethod
+    def _effective_duration(script):
+
+        override = getattr(
+            VisualEngine,
+            "_duration_override",
+            0.0,
+        )
+
+        if override and override > 0:
+            return override
+
+        planned = getattr(
+            script,
+            "total_duration",
+            0,
+        ) or 0
+
+        return planned if planned > 0 else 25
+
+    # =========================================================
+    # BAR
+    # =========================================================
+
+    BAR_HEIGHT = 0.48
+
+    # Never draw a bar narrower than this fraction of the current
+    # axis maximum.  Prevents an entity with a genuinely tiny value
+    # (relative to the leader) from rendering as an invisible
+    # zero-width sliver.
+    MIN_VISIBLE_BAR_FRACTION = 0.015
+
+    # =========================================================
+    # LABEL COLLISION
+    # =========================================================
+
+    MIN_LABEL_GAP = 0.72
+
+    # Hard floor on the row gap the label solver may degrade to.
+    # It is deliberately > 0: two labels sharing one row is the
+    # exact defect _solve_label_positions exists to prevent, so
+    # the solver must never be allowed to bottom out at zero.
+    MIN_ROW_SEPARATION = 0.02
+
+    # Largest font bump the bar-race animation applies to a label
+    # for leader / overtake emphasis.  The label-fit guard fits
+    # labels at base + this so the per-frame emphasis bump can
+    # never re-introduce a left-edge overflow.
+    LABEL_FONT_BUMP = 2
+
+    # =========================================================
+    # SHARE-OF-TOTAL CHARTS (PIE / WAFFLE)  -- Part 1 and Part 2
+    #
+    # A pie or waffle is only HONEST when the numbers are parts
+    # of one whole.  Both renderers therefore refuse to invent a
+    # total: they read the shares from the data and, when the
+    # parts do not add up to 100%, the waffle shows the shortfall
+    # as a grey "Rest of World" block rather than silently
+    # rescaling the parts to fill the grid.
+    # =========================================================
+
+    # Entity window a part-of-whole chart may cover.  Fewer than
+    # 3 slices is not a distribution; more than 6 is unreadable
+    # in a 10x10 grid / on a phone.
+    SHARE_MIN_ENTITIES = 3
+    SHARE_MAX_ENTITIES = 6
+
+    # 10 x 10 grid == 100 boxes, so ONE BOX is exactly ONE
+    # PERCENTAGE POINT.  That identity is what makes the waffle
+    # an integer-exact picture of the shares.
+    WAFFLE_GRID = 10
+    WAFFLE_BOXES = WAFFLE_GRID * WAFFLE_GRID
+
+    # Grey styling for the boxes a <100% total leaves unfilled.
+    REST_OF_WORLD_COLOR = "#39424F"
+    REST_OF_WORLD_LABEL = "Rest of World"
+
+    # Tolerance for "the parts add up to a whole" (percent
+    # points).  Real percentage indicators carry rounding noise.
+    SHARE_TOTAL_TOLERANCE = 2.0
+
+    # ---------------------------------------------------------
+    # MULTI-COLOUR BAR MODE  -- Part 4
+    #
+    # bar_race / top5_change historically painted every bar with
+    # one rotated gradient ramp, so consecutive videos looked
+    # alike.  This mode gives each bar its OWN colour from a
+    # curated, mutually distinguishable 8-colour set, and is
+    # chosen PROBABILISTICALLY per video so both looks appear
+    # across uploads.
+    # ---------------------------------------------------------
+
+    MULTI_COLOR_CHART_TYPES = {"bar_race", "top5_change"}
+
+    MULTI_COLOR_PROBABILITY = float(
+        getattr(settings, "MULTI_COLOR_PROBABILITY", 0.35)
+    )
+
+    # Restrained brand-derived set: champagne gold leads and muted
+    # slate / sage / terracotta companions follow, so the
+    # alternate bar look belongs to the SAME channel as the
+    # single-ramp version (no neon rainbow mode).  Kept distinct
+    # from LEADER_COLOR / OVERTAKE_COLOR (which still override
+    # for emphasis).
+    MULTI_COLOR_PALETTE = list(design_system.CATEGORICAL_PALETTE)
+
+    _MULTI_COLOR_MODE: bool = False
+
+    # =========================================================
+    # STEP 4 — SHORTS LAYOUT
+    # =========================================================
+
+    CHART_LEFT = 0.37
+    CHART_BOTTOM = 0.20
+    CHART_WIDTH = 0.57
+    CHART_HEIGHT = 0.53
+
+    TITLE_Y = 0.935
+    # Mobile legibility: label/number sizes come from config
+    # (FONT_TITLE / FONT_YEAR / FONT_COUNTRY / FONT_VALUE env
+    # overrides) so small text is readable on a phone screen.
+    TITLE_SIZE = settings.FONT_TITLE
+
+    YEAR_X = 0.84
+    YEAR_Y = 0.805
+    YEAR_SIZE = settings.FONT_YEAR
+
+    SOURCE_Y = 0.075
+    SOURCE_SIZE = 18
+
+    COUNTRY_FONT_SIZE = settings.FONT_COUNTRY
+    VALUE_FONT_SIZE = settings.FONT_VALUE
+
+    # =========================================================
+    # STEP 5 — PACING
+    # =========================================================
+
+    TRANSITION_RATIO = 0.78
+
+    # =========================================================
+    # STEP 6 — RANKING EMPHASIS
+    # =========================================================
+
+    SIGNIFICANT_RANK_CHANGE = 1
+
+    OVERTAKE_EMPHASIS = 0.65
+
+    # =========================================================
+    # STEP 7 — OPENING / CLOSING
+    # =========================================================
+
+    OPENING_SECONDS = 0.75
+    CLOSING_SECONDS = 0.45
+
+    # =========================================================
+    # VALUE FORMATTER
+    # =========================================================
+
+    @staticmethod
+    def _bar_width(value, max_val):
+        """Bar width for one entity: the raw value (true zeros stay
+        at zero), with a small visible floor so a genuinely tiny
+        positive value can never render as an invisible zero-width
+        sliver."""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if value <= 0:
+            return 0.0
+        try:
+            floor = (
+                float(max_val or 0.0)
+                * VisualEngine.MIN_VISIBLE_BAR_FRACTION
+            )
+        except (TypeError, ValueError):
+            floor = 0.0
+        return max(value, floor)
+
+    @staticmethod
+    def _bar_width_signed(value, max_abs):
+        """Signed variant for symmetric (positive/negative) charts:
+        keeps tiny gains and tiny declines visible without ever
+        inflating a true-zero value or flipping a bar's sign."""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if value == 0:
+            return 0.0
+        try:
+            floor = (
+                float(max_abs or 0.0)
+                * VisualEngine.MIN_VISIBLE_BAR_FRACTION
+            )
+        except (TypeError, ValueError):
+            floor = 0.0
+        if value > 0:
+            return max(value, floor)
+        return min(value, -floor)
+
+    @staticmethod
+    def _format_value(value, indicator_name=""):
+
+        if pd.isna(value):
+            return ""
+
+        value = float(value)
+
+        indicator = str(
+            indicator_name
+        ).lower()
+
+        if (
+            "%" in indicator
+            or "percent" in indicator
+        ):
+            return f"{value:.1f}%"
+
+        if (
+            "perceptions index" in indicator
+            or "index score" in indicator
+        ):
+            # Survey-based index scores (0-100): NEVER compacted
+            # with K/B/M suffixes -- display as a plain integer.
+            return f"{value:.0f}"
+
+        if "life expectancy" in indicator:
+            return f"{value:.1f}"
+
+        if "population" in indicator:
+
+            if abs(value) >= 1_000_000_000:
+                return (
+                    f"{value / 1_000_000_000:.1f}B"
+                )
+
+            if abs(value) >= 1_000_000:
+                return (
+                    f"{value / 1_000_000:.1f}M"
+                )
+
+            if abs(value) >= 1_000:
+                return (
+                    f"{value / 1_000:.1f}K"
+                )
+
+            return f"{value:,.0f}"
+
+        if (
+            "gdp" in indicator
+            or "current us$" in indicator
+        ):
+
+            # Sign OUTSIDE the currency symbol: "-$1.4T", never
+            # "$-1.4T" (f"${negative:.1f}" put the minus after the
+            # dollar sign -- measured on a top5 decline render).
+            sign = "-" if value < 0 else ""
+            magnitude = abs(value)
+
+            if magnitude >= 1_000_000_000_000:
+                return (
+                    f"{sign}${magnitude / 1_000_000_000_000:.1f}T"
+                )
+
+            if magnitude >= 1_000_000_000:
+                return (
+                    f"{sign}${magnitude / 1_000_000_000:.1f}B"
+                )
+
+            if magnitude >= 1_000_000:
+                return (
+                    f"{sign}${magnitude / 1_000_000:.1f}M"
+                )
+
+            return f"{sign}${magnitude:,.0f}"
+
+        if (
+            "co2" in indicator
+            or "emission" in indicator
+        ):
+
+            if abs(value) >= 1_000_000:
+                return (
+                    f"{value / 1_000_000:.1f}M"
+                )
+
+            if abs(value) >= 1_000:
+                return (
+                    f"{value / 1_000:.1f}K"
+                )
+
+            return f"{value:,.0f}"
+
+        if abs(value) >= 1_000_000_000:
+            return (
+                f"{value / 1_000_000_000:.1f}B"
+            )
+
+        if abs(value) >= 1_000_000:
+            return (
+                f"{value / 1_000_000:.1f}M"
+            )
+
+        if abs(value) >= 1_000:
+            return (
+                f"{value / 1_000:.1f}K"
+            )
+
+        if abs(value) < 100:
+            return f"{value:.1f}"
+
+        return f"{value:,.0f}"
+
+    # =========================================================
+    # EASING
+    # =========================================================
+
+    @staticmethod
+    def ease_in_out(t):
+
+        t = max(
+            0.0,
+            min(
+                1.0,
+                float(t)
+            )
+        )
+
+        return (
+            t * t * (3.0 - 2.0 * t)
+        )
+
+    # =========================================================
+    # STEP 5 — PACED TRANSITION
+    # =========================================================
+
+    @staticmethod
+    def get_transition_progress(
+        year_progress
+    ):
+
+        year_progress = max(
+            0.0,
+            min(
+                1.0,
+                float(year_progress)
+            )
+        )
+
+        transition_ratio = (
+            VisualEngine.TRANSITION_RATIO
+        )
+
+        hold_total = (
+            1.0
+            - transition_ratio
+        )
+
+        hold_before = (
+            hold_total * 0.35
+        )
+
+        transition_end = (
+            hold_before
+            + transition_ratio
+        )
+
+        if year_progress <= hold_before:
+            return 0.0
+
+        if year_progress >= transition_end:
+            return 1.0
+
+        movement_progress = (
+            year_progress
+            - hold_before
+        ) / transition_ratio
+
+        return VisualEngine.ease_in_out(
+            movement_progress
+        )
+
+    # =========================================================
+    # LABEL COLLISION SOLVER
+    # =========================================================
+
+    @staticmethod
+    def _solve_label_positions(
+        raw_positions,
+        min_gap,
+        min_y,
+        max_y
+    ):
+
+        """Push N labels apart so that every one owns a distinct row.
+
+        Bars ride the raw interpolated rank and are allowed to
+        cross; LABELS are what the viewer actually reads, so they
+        are de-collided here.  Three invariants are guaranteed:
+
+          1. every label lands inside [min_y, max_y];
+          2. no two labels share a row (gap >= the effective gap);
+          3. the original vertical ordering is preserved.
+
+        DEFECT FIXED -- "two countries, one name": the previous
+        version walked down the stack enforcing ``min_gap`` and
+        then clamped every label with ``min(y, max_y)``.  That
+        clamp silently DISCARDED the gap the loop had just
+        enforced: any transition that compressed the stack past
+        the bottom of the axis parked two or more labels on the
+        IDENTICAL row (measured: gaps of 0.06 against a required
+        0.72 for a 4-bar full reversal).  The "bottom correction"
+        that followed could therefore never fire -- it was dead
+        code guarded by a condition the clamp made unreachable.
+
+        The ladder is now laid out WITHOUT the destructive clamp,
+        and is built so it fits by construction rather than by
+        correction.  Each label is placed at
+
+            max(its own raw row, one gap below the previous)
+            capped at (bottom of window - gap for every row below)
+
+        The cap is what makes the fit provable: because
+        (count - 1) * effective_gap <= span, the very first label
+        is guaranteed room for the whole ladder, and every later
+        label is guaranteed room for the rows still to come.  No
+        corrective shift is ever needed -- which is what makes the
+        row guarantee exact.  (The obvious alternative, shifting
+        the finished ladder to fit the window, cannot work: a
+        shift that fits max_y can push the top label out through
+        min_y, and the reverse correction undoes the first.)
+
+        If the caller demands a gap larger than the window can
+        hold, the gap degrades -- but never below
+        MIN_ROW_SEPARATION, so distinct rows are still guaranteed.
+        """
+
+        if not raw_positions:
+            return []
+
+        count = len(raw_positions)
+
+        span = float(max_y) - float(min_y)
+
+        low = float(min_y)
+        high = float(max_y)
+
+        # N labels need N - 1 gaps between them inside the span.
+        if count > 1 and span > 0:
+
+            usable_gap = span / (count - 1)
+
+        else:
+
+            usable_gap = float(min_gap)
+
+        effective_gap = max(
+            min(float(min_gap), usable_gap),
+            min(VisualEngine.MIN_ROW_SEPARATION, usable_gap),
+        )
+
+        # Sorted by desired row; each raw clamped into the window.
+        indexed = sorted(
+            enumerate(raw_positions),
+            key=lambda item: float(item[1]),
+        )
+
+        solved = {}
+
+        previous = None
+
+        for position, (index, raw_y) in enumerate(
+            indexed
+        ):
+
+            # Rows still to place BELOW this one.
+            room_left = (count - 1 - position) * effective_gap
+
+            own_row = max(
+                min(float(raw_y), high),
+                low,
+            )
+
+            if previous is None:
+                candidate = own_row
+            else:
+                candidate = max(
+                    own_row,
+                    previous + effective_gap,
+                )
+
+            # Keep enough room below for the remaining labels.
+            solved[index] = min(
+                candidate,
+                high - room_left,
+            )
+
+            previous = solved[index]
+
+        return [
+            solved[index]
+            for index in range(count)
+        ]
+
+    # =========================================================
+    # LABEL FIT GUARD
+    # =========================================================
+
+    # OffsetImage zoom used for flag icons (keep in sync with
+    # the zoom passed to OffsetImage in _get_flag_image).
+    FLAG_ZOOM = 0.32
+
+    @staticmethod
+    def _constrain_labels_in_frame(
+        fig,
+        ax,
+        texts,
+        left_margin_px: float = 0.0,
+        right_margin_px: float = 0.0,
+        font_bump: float = 0.0,
+        min_font_pt: float = 12.0,
+        max_shift_frac: float = 0.12,
+    ) -> list:
+        """Keep every text's box inside the FIGURE on the
+        requested side(s); return the base font sizes.
+
+        This is the ONE safe-boundary implementation.  It backs
+        bar_race's flag-aware left-edge fit, slope's two-sided
+        fit, and (via _max_label_anchor_data_x) the moving
+        labels of line / area -- deliberately three chart types,
+        one algorithm.
+
+        Order of operations, cheapest visual cost first:
+          1. shift/narrow the axes inward, capped at
+             max_shift_frac of the figure width, split between the
+             sides in proportion to how much each one overflows;
+          2. shrink ONLY the labels that still overflow, one point
+             at a time, never below min_font_pt.
+
+        `font_bump` pre-sizes every label at the LARGEST size the
+        caller will later apply, so per-frame emphasis can never
+        re-introduce an overflow.
+
+        Returns a list of base font sizes parallel to `texts`.
+        """
+
+        if not texts:
+            return []
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return [
+                float(text.get_fontsize())
+                for text in texts
+            ]
+
+        fig_w_px = (
+            float(fig.get_figwidth())
+            * float(fig.dpi)
+        )
+
+        right_limit = fig_w_px - float(right_margin_px)
+
+        sizes = [
+            max(
+                min_font_pt,
+                float(text.get_fontsize())
+                + float(font_bump),
+            )
+            for text in texts
+        ]
+
+        def _apply(applied_sizes):
+
+            for text, size in zip(texts, applied_sizes):
+                text.set_fontsize(size)
+
+            try:
+                fig.canvas.draw()
+            except Exception:
+                pass
+
+        def _edges(index):
+
+            try:
+                box = texts[index].get_window_extent(
+                    renderer=renderer
+                )
+                return float(box.x0), float(box.x1)
+            except Exception:
+                return None
+
+        def _overflow(index):
+
+            edges = _edges(index)
+
+            if edges is None:
+                return 0.0, 0.0
+
+            x0, x1 = edges
+
+            return (
+                max(0.0, float(left_margin_px) - x0),
+                max(0.0, x1 - right_limit),
+            )
+
+        _apply(sizes)
+
+        need_left = 0.0
+        need_right = 0.0
+
+        for index in range(len(texts)):
+
+            left, right = _overflow(index)
+
+            need_left = max(need_left, left)
+            need_right = max(need_right, right)
+
+        total_need = need_left + need_right
+
+        if total_need > 0:
+
+            shift_px = min(
+                total_need,
+                max_shift_frac * fig_w_px,
+            )
+
+            share_left = need_left / total_need
+            share_right = need_right / total_need
+
+            dx_left = (
+                share_left * shift_px / fig_w_px
+            )
+            dx_right = (
+                share_right * shift_px / fig_w_px
+            )
+
+            box = ax.get_position()
+
+            ax.set_position(
+                [
+                    box.x0 + dx_left,
+                    box.y0,
+                    max(
+                        0.05,
+                        box.width - dx_left - dx_right,
+                    ),
+                    box.height,
+                ]
+            )
+
+            _apply(sizes)
+
+        # Shrink ONLY what still overflows after the axes shift.
+        for index in range(len(texts)):
+
+            for _ in range(60):
+
+                if sizes[index] <= min_font_pt:
+                    break
+
+                left, right = _overflow(index)
+
+                if left <= 0 and right <= 0:
+                    break
+
+                sizes[index] = max(
+                    min_font_pt,
+                    sizes[index] - 1.0,
+                )
+
+                _apply(sizes)
+
+        return [
+            max(min_font_pt, size)
+            for size in sizes
+        ]
+
+    @staticmethod
+    def _fit_labels_in_frame(
+        fig,
+        ax,
+        texts,
+        extra_left_px: float = 48.0,
+        font_bump: float = 0.0,
+        min_font_pt: float = 12.0,
+    ) -> list:
+        """bar_race's flag-aware LEFT-edge fit.
+
+        Thin wrapper over _constrain_labels_in_frame (the single
+        safe-boundary implementation) that reserves the room a
+        flag icon needs to the left of its label.  Behaviour is
+        unchanged from the original flag-aware guard.
+        """
+        # Room the flag icon needs to the LEFT of a label:
+        # icon width (styled flag * zoom) plus the 6pt offset
+        # gap used by _attach_country_flag, with margin.
+        flag_reserve_px = (
+            float(VisualEngine._FLAG_SIZE[0])
+            * VisualEngine.FLAG_ZOOM
+            + extra_left_px
+        )
+
+        fit_sizes = VisualEngine._constrain_labels_in_frame(
+            fig,
+            ax,
+            texts,
+            left_margin_px=flag_reserve_px,
+            right_margin_px=0.0,
+            font_bump=font_bump,
+            min_font_pt=min_font_pt,
+        )
+
+        # Hand back the BASE sizes: what the caller must use as
+        # the base of its own `base + emphasis` arithmetic.
+        base_sizes = [
+            max(min_font_pt, size - float(font_bump))
+            for size in fit_sizes
+        ]
+
+        for text, size in zip(texts, base_sizes):
+            text.set_fontsize(size)
+
+        try:
+            fig.canvas.draw()
+        except Exception:
+            pass
+
+        return base_sizes
+
+    @staticmethod
+    def _reserve_value_headroom(
+        fig,
+        ax,
+        value_texts,
+        max_val: float,
+        right_margin_px: float = 28.0,
+        max_expand_frac: float = 0.30,
+    ) -> float:
+        """Part 2 DEFECT B guard: keep bar-race/top5 numeric labels inside.
+
+        Entity-label fit (Part 1) protects the LEFT edge; nothing
+        protected the RIGHT: the largest value text sits at
+        ``bar_width(max) + gap`` so e.g. ``36.7M`` ran ~41px past a
+        1080px canvas.  This measures the REAL rendered width of
+        every value text at its CURRENT string, widens the x-limit
+        only as much as needed (bounded by max_expand_frac so the
+        chart never collapses), and returns the (possibly new)
+        max_val.  Returns the input unchanged when nothing
+        overflows, so normal charts are pixel-identical.
+        """
+
+        if not value_texts:
+            return max_val
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return max_val
+
+        try:
+            fig_w_px = (
+                float(fig.get_figwidth()) * float(fig.dpi)
+            )
+        except Exception:
+            return max_val
+
+        right_limit = fig_w_px - float(right_margin_px)
+        worst = 0.0
+
+        for text in value_texts:
+            try:
+                box = text.get_window_extent(renderer=renderer)
+                worst = max(worst, float(box.x1) - right_limit)
+            except Exception:
+                continue
+
+        if worst <= 0:
+            return max_val
+
+        try:
+            base = float(max_val)
+        except (TypeError, ValueError):
+            return max_val
+
+        if base <= 0:
+            return max_val
+
+        # Convert the pixel overflow back into data units via the
+        # current transform, then grow the limit just past it.
+        try:
+            px_per_data = (
+                ax.transData.transform((base, 0.0))[0]
+                - ax.transData.transform((0.0, 0.0))[0]
+            ) / base
+        except Exception:
+            return max_val
+
+        if px_per_data <= 0:
+            return max_val
+
+        need_data = worst / px_per_data * 1.05
+        cap = base * (1.0 + float(max_expand_frac))
+        grown = min(base + need_data, cap)
+
+        try:
+            lo, _hi = ax.get_xlim()
+            ax.set_xlim(lo, grown)
+        except Exception:
+            return max_val
+
+        return grown
+
+    @staticmethod
+    def _max_label_anchor_data_x(
+        fig,
+        ax,
+        texts,
+        right_margin_px: float = 24.0,
+    ) -> float:
+        """Largest DATA-x a left-anchored moving label may sit at
+        without its text running past the figure's right edge.
+
+        line and area park the country name on the moving leading
+        edge of the series, so as the sweep advances the anchor
+        reaches the right side of the axes and a long name runs
+        off-canvas (measured before the fix: "Democratic Republic
+        of the Congo" ended at x1 = 1478px on a 1080px frame).
+
+        These labels hold a CONSTANT string at a CONSTANT font
+        size, so their pixel width is fixed: measure it once,
+        convert the pixel budget back into data coordinates, and
+        clamp the anchor in the render loop.  Short labels never
+        reach the clamp, so their appearance is unchanged.
+        """
+
+        if not texts:
+            return float("inf")
+
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return float("inf")
+
+        fig_w_px = (
+            float(fig.get_figwidth())
+            * float(fig.dpi)
+        )
+
+        widest = 0.0
+
+        for text in texts:
+
+            try:
+                box = text.get_window_extent(
+                    renderer=renderer
+                )
+                widest = max(
+                    widest,
+                    float(box.x1) - float(box.x0),
+                )
+            except Exception:
+                continue
+
+        if widest <= 0:
+            return float("inf")
+
+        budget_px = fig_w_px - float(right_margin_px) - widest
+
+        if budget_px <= 0:
+            # Even a zero-width anchor would overflow: fall back
+            # to the axes' own right edge so behaviour degrades
+            # to "as good as possible" rather than nonsense.
+            budget_px = 0.0
+
+        try:
+            x_data, _ = ax.transData.inverted().transform(
+                (budget_px, 0.0)
+            )
+            return float(x_data)
+        except Exception:
+            return float("inf")
+
+    @staticmethod
+    def _is_year_axis(labels) -> bool:
+        """True when every x label is a whole year (1900..2100).
+
+        Used to decide whether the x-axis may be pinned to
+        INTEGER year ticks.  The default matplotlib locator picked
+        half-year steps on year ranges, so the axis printed
+        "2019.0  2019.5  2020.0 ...".  Any axis that is not made
+        of whole years (generic numeric x values, non-year data)
+        returns False and keeps the default locator untouched.
+        """
+
+        values = list(labels)
+
+        if len(values) < 2:
+            return False
+
+        try:
+            numbers = [float(value) for value in values]
+        except (TypeError, ValueError):
+            return False
+
+        for value in numbers:
+
+            if not np.isfinite(value):
+                return False
+
+            if abs(value - round(value)) > 1e-9:
+                return False
+
+            if not (1900 <= value <= 2100):
+                return False
+
+        return True
+
+    # =========================================================
+    # PREMIUM GRADIENT SYSTEM (CSS-style linear gradients)
+    # =========================================================
+
+    _GRADIENT_CACHE = {}
+
+    @staticmethod
+    def _hex_to_rgb01(hex_color):
+
+        h = str(hex_color).lstrip("#")
+
+        return np.array(
+            [
+                int(h[0:2], 16),
+                int(h[2:4], 16),
+                int(h[4:6], 16),
+            ],
+            dtype=float
+        ) / 255.0
+
+    @staticmethod
+    def _shade(hex_color, amount):
+
+        """
+        Lighten (amount > 0) or darken (amount < 0)
+        a hex color.
+        """
+
+        rgb = VisualEngine._hex_to_rgb01(hex_color)
+
+        if amount >= 0:
+            rgb = rgb + (1.0 - rgb) * amount
+        else:
+            rgb = rgb * (1.0 + amount)
+
+        rgb = np.clip(rgb, 0.0, 1.0)
+
+        return "#{:02X}{:02X}{:02X}".format(
+            int(round(rgb[0] * 255)),
+            int(round(rgb[1] * 255)),
+            int(round(rgb[2] * 255)),
+        )
+
+    @staticmethod
+    def _bar_gradient(base_hex):
+
+        """
+        Build a horizontal linear gradient for a bar:
+
+            deep shade at the base
+            → luminous shade at the tip
+
+        like a premium CSS linear-gradient fill.
+        Results are cached per color.
+        """
+
+        cached = (
+            VisualEngine._GRADIENT_CACHE.get(
+                base_hex
+            )
+        )
+
+        if cached is not None:
+            return cached
+
+        start = VisualEngine._hex_to_rgb01(
+            VisualEngine._shade(base_hex, -0.38)
+        )
+
+        end = VisualEngine._hex_to_rgb01(
+            VisualEngine._shade(base_hex, 0.22)
+        )
+
+        t = np.linspace(
+            0.0,
+            1.0,
+            256
+        ).reshape(1, -1, 1)
+
+        gradient = (
+            (1.0 - t) * start.reshape(1, 1, 3)
+            + t * end.reshape(1, 1, 3)
+        )
+
+        VisualEngine._GRADIENT_CACHE[base_hex] = gradient
+
+        return gradient
+
+    # =========================================================
+    # COLOR SYSTEM
+    # =========================================================
+
+    # ---------------------------------------------------------
+    # THEMED PALETTE ROTATION (config-driven)
+    #
+    # One fixed metallic ramp made every video look the same.
+    # Palettes are defined in app.config settings.CHART_PALETTES
+    # (env-overridable JSON).  select_palette() picks the active
+    # palette ONCE PER VIDEO: a themed palette when the title /
+    # topic matches (economy / population / military / technology
+    # keywords), otherwise a cursor rotation through all palettes
+    # so consecutive uploads look visually distinct.
+    # ---------------------------------------------------------
+
+    _PALETTES: dict = {}
+    _PALETTES_LOADED: bool = False
+    _PALETTE_CURSOR: int = 0
+    _ACTIVE_PALETTE: list = []
+    _ACTIVE_PALETTE_NAME: str = ""
+
+    # Palette key -> topic keyword stems matched against the
+    # video title/topic/category (lowercase, substring match).
+    _PALETTE_TOPIC_KEYWORDS: dict = {
+        "economy": (
+            "econom", "gdp", "inflation", "cpi", "richest",
+            "poorest", "billionaire", "debt", "income", "revenue",
+            "net worth", "money", "trade", "export", "import",
+            "gold", "budget", "salary", "wage", "company",
+            "companies", "brand", "bank",
+        ),
+        "population": (
+            "population", "people", "urban", "migration",
+            "birth", "fertility", "life expectancy", "cities",
+            "city", "megacity",
+        ),
+        "military": (
+            "militar", "army", "war", "soldier", "nuclear",
+            "defense", "defence", "weapon", "tank", "fighter",
+            "navy", "air force", "missile", "drone",
+        ),
+        "technology": (
+            "technolog", "internet", " ai ", "ai-", "tech",
+            "coding", "program", "software", "robot", "youtube",
+            "instagram", "tiktok", "gaming", "gamer", "esports",
+            "smartphone", "app",
+        ),
+    }
+
+    @classmethod
+    def _load_palettes(cls):
+        """Parse settings.CHART_PALETTES once (JSON dict of lists)."""
+
+        if cls._PALETTES_LOADED:
+            return
+
+        cls._PALETTES_LOADED = True
+
+        import json
+
+        try:
+            parsed = json.loads(settings.CHART_PALETTES)
+            if isinstance(parsed, dict):
+                cls._PALETTES = {
+                    str(key).strip().lower(): [
+                        str(color) for color in values
+                    ]
+                    for key, values in parsed.items()
+                    if isinstance(values, (list, tuple)) and values
+                }
+        except (ValueError, TypeError, AttributeError):
+            cls._PALETTES = {}
+
+        if not cls._PALETTES:
+            # Fallback: the historical fixed metallic ramp.
+            cls._PALETTES = {
+                "default": [
+                    "#E3BC6B", "#C89B45", "#AD7F35", "#93682C",
+                    "#7A5526", "#62441F", "#4C351A", "#3B2915",
+                ],
+            }
+
+    @classmethod
+    def select_palette(cls, script=None):
+        """Choose the active bar palette for ONE video.
+
+        1. Themed palette when title/topic/category matches a
+           palette keyword group.
+        2. Otherwise rotate the cursor through every palette so
+           consecutive videos differ.
+
+        Returns the active palette list (also stored on
+        _ACTIVE_PALETTE for _get_bar_color).
+        """
+
+        cls._load_palettes()
+
+        fallback = (
+            cls._PALETTES.get("default")
+            or next(iter(cls._PALETTES.values()))
+        )
+
+        if not getattr(settings, "PALETTE_ROTATION_ENABLED", True):
+            cls._ACTIVE_PALETTE = fallback
+            cls._ACTIVE_PALETTE_NAME = "default"
+            return fallback
+
+        haystack = ""
+
+        if script is not None:
+            for attr in ("title", "topic", "category", "topic_family"):
+                value = getattr(script, attr, "")
+                haystack += " " + str(value or "").lower()
+
+        # Themed match first.
+        for key, keywords in cls._PALETTE_TOPIC_KEYWORDS.items():
+            palette = cls._PALETTES.get(key)
+            if not palette:
+                continue
+            if any(k in haystack for k in keywords):
+                cls._ACTIVE_PALETTE = palette
+                cls._ACTIVE_PALETTE_NAME = key
+                return palette
+
+        # Cursor rotation (skip the "default" entry so themed
+        # colors actually cycle).
+        names = [
+            name for name in cls._PALETTES if name != "default"
+        ] or list(cls._PALETTES)
+
+        name = names[cls._PALETTE_CURSOR % len(names)]
+        cls._PALETTE_CURSOR += 1
+
+        cls._ACTIVE_PALETTE = cls._PALETTES[name]
+        cls._ACTIVE_PALETTE_NAME = name
+
+        return cls._ACTIVE_PALETTE
+
+    @staticmethod
+    def _select_bar_coloring(chart_type):
+        """Choose the per-bar colouring MODE for ONE video.
+
+        Called once per render_scenes() run for EVERY chart
+        type, so the flag is always explicitly set (never left
+        over from a previous video):
+
+          * only bar_race / top5_change are eligible at all;
+          * among those, the multi-colour look is chosen
+            PROBABILISTICALLY (settings.MULTI_COLOR_PROBABILITY,
+            default 0.35) so the two looks genuinely mix across
+            consecutive uploads instead of one of them
+            disappearing.
+
+        Returns True when the multi-colour mode is active.
+        """
+
+        eligible = (
+            str(chart_type).strip().lower()
+            in VisualEngine.MULTI_COLOR_CHART_TYPES
+        )
+
+        if not eligible:
+            VisualEngine._MULTI_COLOR_MODE = False
+            return False
+
+        try:
+            probability = float(
+                VisualEngine.MULTI_COLOR_PROBABILITY
+            )
+        except (TypeError, ValueError):
+            probability = 0.35
+
+        probability = max(0.0, min(1.0, probability))
+
+        VisualEngine._MULTI_COLOR_MODE = bool(
+            random.random() < probability
+        )
+
+        return VisualEngine._MULTI_COLOR_MODE
+
+    @staticmethod
+    def _get_bar_color(
+        rank,
+        is_current_leader=False,
+        is_overtake=False
+    ):
+
+        if is_overtake:
+            return VisualEngine.OVERTAKE_COLOR
+
+        if is_current_leader:
+            return VisualEngine.LEADER_COLOR
+
+        # -----------------------------------------------------
+        # MULTI-COLOUR MODE (Part 4): one distinct colour per
+        # bar, from the curated palette, instead of the single
+        # rotated gradient ramp.  Leader / overtake emphasis
+        # above still wins, so the story beats stay readable.
+        # -----------------------------------------------------
+
+        if VisualEngine._MULTI_COLOR_MODE:
+
+            palette = VisualEngine.MULTI_COLOR_PALETTE
+
+            if palette:
+
+                rank = max(
+                    0,
+                    min(
+                        int(rank),
+                        len(palette) - 1
+                    )
+                )
+
+                return palette[rank]
+
+        # Active themed palette for THIS video (rotated once per
+        # render by select_palette; falls back to a lazy pick when
+        # a renderer was called directly).
+        palette = (
+            VisualEngine._ACTIVE_PALETTE
+            or VisualEngine.select_palette()
+        )
+
+        rank = max(
+            0,
+            min(
+                int(rank),
+                len(palette) - 1
+            )
+        )
+
+        return palette[rank]
+
+    # =========================================================
+    # STEP 6 — FIND OVERTAKES
+    # =========================================================
+
+    @staticmethod
+    def _find_overtakes(
+        current_ranks,
+        next_ranks,
+        countries
+    ):
+
+        overtakes = set()
+
+        for country in countries:
+
+            current_rank = float(
+                current_ranks[country]
+            )
+
+            next_rank = float(
+                next_ranks[country]
+            )
+
+            if (
+                current_rank
+                - next_rank
+                >= VisualEngine.SIGNIFICANT_RANK_CHANGE
+            ):
+
+                overtakes.add(
+                    country
+                )
+
+        return overtakes
+
+    # =========================================================
+    # INDEX NORMALIZATION
+    # =========================================================
+
+    @staticmethod
+    def _normalize_index(data):
+
+        """
+        Safely convert the DataFrame index into normal
+        string labels.
+
+        MultiIndex rows arrive from the providers as
+        (code/identifier, human-readable name) pairs:
+
+            ("4", "PC")
+            ("USA", "United States")
+            ("IND", "India")
+
+        becomes:
+
+            "PC"
+            "United States"
+            "India"
+
+        The LAST level is always the human-readable display name --
+        the first level is the internal code, and using it as the
+        chart label put raw RAWG platform ids (4, 187, 21, ...) on
+        gaming charts instead of "PC", "PlayStation 5", etc.
+        """
+
+        if isinstance(
+            data.index,
+            pd.MultiIndex
+        ):
+
+            normalized = []
+
+            for item in data.index:
+
+                if len(item) == 0:
+                    normalized.append("")
+                    continue
+
+                # The LAST level holds the human-readable
+                # display name; the first level is the internal
+                # code/identifier.
+                label = item[-1] if len(item) >= 2 else item[0]
+
+                if (
+                    label is None
+                    or pd.isna(label)
+                ):
+                    label = ""
+
+                label = str(
+                    label
+                ).strip()
+
+                normalized.append(
+                    label
+                )
+
+            data.index = pd.Index(
+                normalized,
+                dtype="object"
+            )
+
+        else:
+
+            data.index = pd.Index(
+                [
+                    ""
+                    if (
+                        value is None
+                        or pd.isna(value)
+                    )
+                    else str(value).strip()
+                    for value in data.index
+                ],
+                dtype="object"
+            )
+
+        # Remove empty labels.
+        valid_mask = [
+            bool(
+                str(value).strip()
+            )
+            for value in data.index
+        ]
+
+        data = data.loc[
+            valid_mask
+        ]
+
+        # Remove duplicate country names.
+        # Keep the first occurrence.
+        if data.index.duplicated().any():
+
+            data = data[
+                ~data.index.duplicated(
+                    keep="first"
+                )
+            ]
+
+        return data
+
+    # =========================================================
+    # BAR RACE RENDER
+    # =========================================================
+
+
+    # ---------------------------------------------------------
+    # CHECKPOINT-YEAR SUBSAMPLING (Issue 5)
+    #
+    # YEAR_WINDOW_POOL now reaches 15-year spans.  Sweeping every
+    # intermediate year of a 12-15 column window would compress
+    # each transition far below the pacing the 18-30s band was
+    # tuned for (the exact path back to Issue 1's rushed
+    # narration).  Windows wider than 10 columns are therefore
+    # animated through evenly spaced CHECKPOINT years -- start,
+    # three midpoints, end -- always including the first /
+    # middle / last years the script engine narrates.  Windows
+    # of 10 or fewer columns keep the verified behaviour.
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def checkpoint_years(years):
+
+        count = len(years)
+
+        if count <= 10:
+            return list(years)
+
+        picks = sorted(
+            {0, count // 4, count // 2, 3 * count // 4, count - 1}
+        )
+
+        return [years[i] for i in picks]
+
+
+    @staticmethod
+    def render_bar_race(
+        script,
+        data: pd.DataFrame,
+        output_dir: str
+    ):
+
+        if data.empty:
+
+            raise ValueError(
+                "No data provided for visual rendering."
+            )
+
+        os.makedirs(
+            output_dir,
+            exist_ok=True
+        )
+
+        print(
+            "🎨 Rendering Step 6 + Step 7 "
+            "premium Shorts animation..."
+        )
+
+        # =====================================================
+        # CLEAN DATA
+        # =====================================================
+
+        data = data.copy()
+
+        # -----------------------------------------------------
+        # FIX:
+        # World Bank can return a MultiIndex.
+        #
+        # DO NOT use:
+        #
+        # data.index.astype(str)
+        #
+        # because pandas raises:
+        #
+        # TypeError: Setting a MultiIndex dtype to anything
+        # other than object is not supported
+        # -----------------------------------------------------
+
+        data = VisualEngine._normalize_index(
+            data
+        )
+
+        # -----------------------------------------------------
+        # Column labels -> numeric years.  Handles plain years,
+        # the World Bank "YR" form, AND season labels like
+        # "2024-25" / "2024/25" / "2025-26 (in progress)" via the
+        # shared coerce_year_label helper (season labels resolve
+        # to their starting year).  Columns with no plausible
+        # year are skipped; duplicate years (e.g. "2024" plus
+        # "2024-25") keep only the first occurrence.
+        # -----------------------------------------------------
+
+        valid_original_columns = []
+        seen_years = set()
+
+        for column in data.columns:
+
+            year = coerce_year_label(column)
+
+            if year is None or year in seen_years:
+                continue
+
+            seen_years.add(year)
+
+            valid_original_columns.append(
+                (
+                    column,
+                    year,
+                )
+            )
+
+        # If no valid year columns remain,
+        # fail clearly instead of producing a
+        # confusing matplotlib error.
+
+        if not valid_original_columns:
+
+            raise ValueError(
+                "No valid year columns found "
+                "for visual rendering."
+            )
+
+        data = data[
+            [
+                original
+                for original, _
+                in valid_original_columns
+            ]
+        ]
+
+        data.columns = [
+            year
+            for _, year
+            in valid_original_columns
+        ]
+
+        data = data.reindex(
+            sorted(
+                data.columns
+            ),
+            axis=1
+        )
+
+        data = data.dropna(
+            how="all"
+        )
+
+        data = data.dropna(
+            axis=0,
+            how="all"
+        )
+
+        if data.empty:
+
+            raise ValueError(
+                "No usable data after cleaning."
+            )
+
+        years = list(
+            data.columns
+        )
+
+        # CHECKPOINT SUBSAMPLING (Issue 5): wide windows animate
+        # through evenly spaced checkpoint years (see
+        # checkpoint_years) so pacing never compresses; <=10
+        # columns are untouched.
+        years = VisualEngine.checkpoint_years(years)
+
+        # =====================================================
+        # MOBILE BAR CAP
+        # =====================================================
+
+        # Mobile legibility: 6-8 bars have cramped labels that
+        # fail on a phone at a glance.  The budget comes from
+        # compute_bar_cap (CHART_MAX_BARS, vs-title override,
+        # MAX_CHART_ENTITIES ceiling) and the selection from
+        # cap_display_index -- BOTH shared with
+        # app/qc/entity_guard.py so the pre-render validation
+        # simulates exactly what this renderer draws.
+        #
+        # FOCUS-AWARE (Issue 2 fix): entities the script names
+        # (scene highlight_countries / title) are guaranteed a
+        # bar even when their peak value ranks below the value
+        # leaders -- the published India video dropped its own
+        # subject here.
+        #
+        # `countries` is the pre-cap label list: the index was
+        # already normalised to display names at line ~1085, and
+        # its LENGTH is what decides whether the cap runs at all.
+        # (A missing assignment here raised UnboundLocalError,
+        # which aborted every bar-race render.)
+        countries = (
+            VisualEngine._index_display_labels(data)
+        )
+
+        MAX_BARS = (
+            VisualEngine.compute_bar_cap(script)
+        )
+
+        focus_entities = (
+            VisualEngine._resolve_focus_entities(
+                script,
+                data,
+            )
+        )
+
+        if len(countries) > MAX_BARS:
+
+            kept_raw = (
+                VisualEngine.cap_display_index(
+                    data,
+                    MAX_BARS,
+                    focus=focus_entities,
+                )
+            )
+
+            data = data.loc[
+                kept_raw
+            ]
+
+        countries = (
+            VisualEngine
+            ._index_display_labels(data)
+        )
+
+        print(
+            "📊 Chart bars (focus-guaranteed): "
+            f"{', '.join(countries)}"
+        )
+
+        if focus_entities:
+
+            missing_focus = [
+                label
+                for label in focus_entities
+                if label not in countries
+            ]
+
+            if missing_focus:
+
+                raise ValueError(
+                    "Focus entities missing from the "
+                    f"rendered bars: {missing_focus} "
+                    f"(rendered: {countries})."
+                )
+
+        data = data.ffill(
+            axis=1
+        ).bfill(
+            axis=1
+        )
+
+        # Make sure all values are numeric.
+        # Invalid values become NaN.
+
+        for column in data.columns:
+
+            data[column] = pd.to_numeric(
+                data[column],
+                errors="coerce"
+            )
+
+        data = data.dropna(
+            how="all"
+        )
+
+        if data.empty:
+
+            raise ValueError(
+                "No numeric World Bank data "
+                "available after cleaning."
+            )
+
+        countries = data.index.tolist()
+
+        # =====================================================
+        # FLAGS — fetch every country's flag up-front so the
+        # per-label attachment below never triggers a mid-render
+        # network burst (which flagcdn rate-limits, silently
+        # dropping all flags after the first).
+        # =====================================================
+
+        VisualEngine.prefetch_flags(countries)
+
+        # =====================================================
+        # RANKINGS
+        # =====================================================
+
+        ranks_df = data.rank(
+            method="first",
+            ascending=False,
+            axis=0
+        )
+
+        # =====================================================
+        # FIGURE
+        # =====================================================
+
+        plt.rcParams[
+            "figure.facecolor"
+        ] = VisualEngine.BG_COLOR
+
+        plt.rcParams[
+            "axes.facecolor"
+        ] = VisualEngine.BG_COLOR
+
+        plt.rcParams[
+            "text.color"
+        ] = VisualEngine.TEXT_COLOR
+
+        plt.rcParams[
+            "font.family"
+        ] = "DejaVu Sans"
+
+        fig = plt.figure(
+            figsize=(10.8, 19.2),
+            dpi=100
+        )
+
+        # =====================================================
+        # CHART
+        # =====================================================
+
+        ax = fig.add_axes(
+            [
+                VisualEngine.CHART_LEFT,
+                VisualEngine.CHART_BOTTOM,
+                VisualEngine.CHART_WIDTH,
+                VisualEngine.CHART_HEIGHT
+            ]
+        )
+
+        ax.set_facecolor(
+            VisualEngine.BG_COLOR
+        )
+
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # Restrained depth behind the data (same treatment as
+        # _create_figure): soft figure-space glows at zorder 0,
+        # tinted by the active topic ramp.
+        design_system.apply_atmosphere(
+            ax,
+            fig,
+            (
+                VisualEngine._ACTIVE_PALETTE
+                or [design_system.BRAND_GOLD]
+            )[0],
+        )
+
+        # =====================================================
+        # VIDEO TIMING (computed early: needed by the
+        # background pulse below) -- audio-synced when the real
+        # narration length was provided to render_scenes().
+        # =====================================================
+
+        video_duration = (
+            VisualEngine._effective_duration(
+                script
+            )
+        )
+
+        total_frames = int(
+            video_duration
+            * VisualEngine.FPS
+        )
+
+        # =====================================================
+        # ENHANCED BACKGROUND: gradient + vignette
+        # =====================================================
+
+        VisualEngine._draw_background(
+            fig,
+            ax,
+            pulse_frame=0,
+            total_frames=total_frames
+        )
+
+        # =====================================================
+        # GRID LINES (animated fade-in)
+        # =====================================================
+
+        ax.grid(
+            True,
+            axis="x",
+            color=VisualEngine.GRID_COLOR,
+            alpha=0.35,
+            linewidth=1.0
+        )
+
+        max_val = float(
+            data.max().max()
+        )
+
+
+        if max_val <= 0:
+            max_val = 1
+
+        max_val *= 1.18
+
+        ax.set_xlim(
+            0,
+            max_val
+        )
+
+        # -----------------------------------------------------
+        # VERTICAL SPACING (entity-count aware)
+        #
+        # Bars sit on integer rank slots, so a slot's pixel
+        # height is axes_height / ylim_span.  With the span
+        # fixed to exactly N units, a 3-entity chart inflated
+        # every slot (bars AND gaps) by 33% vs the 4-entity
+        # look -- sparse, oversized bars.  Normalize the slot
+        # size to the 4-entity reference and center the
+        # content: the extra span is split evenly as
+        # top/bottom padding.
+        # -----------------------------------------------------
+
+        n_bars = len(countries)
+
+        reference_span = 4 if n_bars >= 3 else 3
+
+        extra_span = max(0.0, reference_span - n_bars)
+
+        ax.set_ylim(
+            -0.5 - extra_span / 2.0,
+            n_bars - 0.5 + extra_span / 2.0,
+        )
+
+        ax.invert_yaxis()
+
+        # =====================================================
+        # INITIAL RANKS
+        # =====================================================
+
+        first_year = years[0]
+
+        initial_ranks = ranks_df[
+            first_year
+        ]
+
+        # =====================================================
+        # BARS
+        # =====================================================
+
+        bars = []
+
+        for country in countries:
+
+            rank = (
+                int(
+                    initial_ranks[country]
+                )
+                - 1
+            )
+
+            value = float(
+                data.loc[
+                    country,
+                    first_year
+                ]
+            )
+
+            color = (
+                VisualEngine
+                ._get_bar_color(
+                    rank,
+                    is_current_leader=(
+                        rank == 0
+                    )
+                )
+            )
+
+            # Premium CSS-style gradient bar
+            bar = ax.imshow(
+                VisualEngine._bar_gradient(
+                    color
+                ),
+                extent=[
+                    0,
+                    VisualEngine._bar_width(value, max_val),
+                    rank
+                    - VisualEngine.BAR_HEIGHT / 2,
+                    rank
+                    + VisualEngine.BAR_HEIGHT / 2,
+                ],
+                origin="lower",
+                aspect="auto",
+

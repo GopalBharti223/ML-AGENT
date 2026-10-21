@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "d:\ML_AGENT\_tmp\probe3.py", line 69, in <module>
+    src = src_n.replace(old_n, new_block, 1)
+NameError: name 'new_block' is not defined
