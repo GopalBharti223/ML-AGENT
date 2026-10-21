@@ -835,6 +835,12 @@ def _text_width_px(text, fontsize_pt, family=None, weight="normal"):
     return len(str(text)) * fontsize_pt * 0.55 * 100.0 / 72.0
 
 
+# Public alias: renderers measure label budgets with the same
+# helper the fitting tools use (pie/waffle legend columns, value
+# budgets, etc.) so no renderer re-invents a width estimator.
+text_width_px = _text_width_px
+
+
 def fit_fontsize(text, max_width_px, start_px, family=None, weight="normal"):
     """Largest point size <= start_px that fits `text` in max_width_px.
 

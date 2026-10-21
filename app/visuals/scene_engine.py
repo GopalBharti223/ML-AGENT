@@ -1,4 +1,4 @@
-import matplotlib
+﻿import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -269,6 +269,43 @@ class VisualEngine:
     # above).  Kept separate from SOURCE_Y so the other seven
     # renderers keep their existing chrome position.
     RACE_SOURCE_Y = 0.7755
+
+    # =========================================================
+    # SHARED CHART FRAME (line / area / slope / bubble / top5)
+    #
+    # The old rect [0.13, 0.20, 0.78, 0.58] dipped below the
+    # bottom safe zone (0.20 < 0.22, so x tick labels landed
+    # under the Shorts caption overlay) and ran its right edge
+    # into the action rail (0.91 > 0.86).  The new rect sits
+    # fully inside the safe band; its TOP is computed per
+    # renderer by _layout_header() from the MEASURED header
+    # stack (title -> source -> [year]), so a two-line title
+    # can never print over the year indicator.
+    # =========================================================
+    SHARED_AXES_LEFT = 0.10
+    SHARED_AXES_BOTTOM = 0.245   # tick labels land 0.229..0.245
+    SHARED_AXES_WIDTH = 0.74     # right edge 0.84 <= 0.86 rail
+
+    # Animated latest-year indicator slot (line / area) and the
+    # static year shown by pie / waffle -- 36pt == 50px, well
+    # above UI_MIN_FONT_PX.
+    SHARED_YEAR_SIZE = 36
+
+    # =========================================================
+    # SHARE LEGEND (pie / waffle) -- CENTERED visual on top,
+    # compact measured legend BELOW it.  The old layout parked a
+    # 40%-wide visual bottom-left with a right-hand legend column
+    # whose values right-aligned at x=0.955 -- inside the right
+    # safe zone (rail edge 0.86) -- and truncated names with
+    # fixed slices.  Geometry below is figure fractions.
+    # =========================================================
+    SHARE_LEGEND_SWATCH_X = 0.135
+    SHARE_LEGEND_NAME_X = 0.158
+    SHARE_LEGEND_VALUE_X = 0.86    # right-aligned AT the rail edge
+    SHARE_LEGEND_TOP = 0.385       # first row centre
+    SHARE_LEGEND_PITCH = 0.0265    # ~51px per row at 1920 tall
+    SHARE_LEGEND_FONT = 24         # 33px >= UI_MIN_FONT_PX
+    SHARE_COUNTER_Y = 0.2315       # waffle box counter, >= 0.22
 
     COUNTRY_FONT_SIZE = settings.FONT_COUNTRY
     VALUE_FONT_SIZE = settings.FONT_VALUE
@@ -1973,12 +2010,6 @@ class VisualEngine:
                     f"(rendered: {countries})."
                 )
 
-        data = data.ffill(
-            axis=1
-        ).bfill(
-            axis=1
-        )
-
         # Make sure all values are numeric.
         # Invalid values become NaN.
 
@@ -1992,6 +2023,46 @@ class VisualEngine:
         data = data.dropna(
             how="all"
         )
+
+        # MISSING OBSERVATIONS -- never fabricate.
+        #
+        # This used to ffill()/bfill() the panel before ranking,
+        # which invented values: an entity missing a checkpoint
+        # year silently carried its last (or next) observation
+        # into years that were never observed.  A bar race ranks
+        # EVERY animated year, so an entity with no real value at
+        # a checkpoint cannot be honestly ranked there.  Entities
+        # without complete checkpoint coverage are EXCLUDED with
+        # a printed note (the chart-appropriate strategy for
+        # insufficient observations); actual zeros stay zeros and
+        # real gaps stay missing.  Only when NO entity has
+        # complete coverage does the renderer raise instead of
+        # drawing fiction or crashing on NaN ranks.
+        checkpoint_frame = data.reindex(columns=years)
+
+        incomplete = checkpoint_frame.isna().any(axis=1)
+
+        if incomplete.any():
+
+            dropped = [
+                str(label)
+                for label in data.index[incomplete]
+            ]
+
+            print(
+                "  bar_race: excluded (no observation for every "
+                f"animated year): " + ", ".join(dropped)
+            )
+
+            data = data.loc[~incomplete]
+
+        if data.empty:
+
+            raise ValueError(
+                "Bar race needs at least one entity with real "
+                "observations for every animated year; refusing "
+                "to forward-fill missing values."
+            )
 
         if data.empty:
 
@@ -2429,8 +2500,11 @@ class VisualEngine:
                 ax,
                 value_texts,
                 max_val,
+                # RAIL-SAFE: the old 28px frame margin let a long
+                # value print under the Shorts action rail (edge
+                # 0.86).  The safe margin reserves the rail itself.
                 right_margin_px=(
-                    design_system.VALUE_SAFE_MARGIN_PX
+                    VisualEngine._safe_right_margin_px(fig)
                 ),
             )
             for _vt in value_texts:
@@ -2580,20 +2654,31 @@ class VisualEngine:
         # STEP 7 — TITLE
         # =====================================================
 
-        title_text = fig.text(
-            0.5,
-            VisualEngine.TITLE_Y,
-            script.title.upper(),
-            ha="center",
-            va="top",
-            color=VisualEngine.TEXT_COLOR,
-            fontsize=VisualEngine.TITLE_SIZE,
-            fontweight="bold",
-            wrap=True
-        )
-
-        title_text.set_path_effects(
-            design_system.editorial_text_effects(linewidth=2.5)
+        # MEASURED HEADER: title -> year -> source.  The old fixed
+        # positions overprinted a two-line title with the gold year
+        # counter (measured: title bottom 0.840 vs year top 0.852 --
+        # the rendered frame showed "2022" printed over "2018-2022").
+        # _layout_header fits the title to <=2 measured lines and,
+        # when the stack would crowd the chart top, steps the
+        # (title, year) sizes down until the chart keeps its room.
+        header = VisualEngine._layout_header(
+            fig,
+            script.title,
+            year_size_pt=VisualEngine.YEAR_SIZE,
+            source_base=VisualEngine.RACE_SOURCE_Y,
+            year_base=VisualEngine.YEAR_Y,
+            year_first=True,
+            min_content_top=(
+                VisualEngine.CHART_BOTTOM
+                + VisualEngine.CHART_HEIGHT
+                + 6.0 / 1920.0
+            ),
+            title_size_candidates=(
+                VisualEngine.TITLE_SIZE, 46, 42
+            ),
+            year_size_candidates=(
+                VisualEngine.YEAR_SIZE, 60
+            ),
         )
 
         # =====================================================
@@ -2602,12 +2687,12 @@ class VisualEngine:
 
         year_text = fig.text(
             VisualEngine.YEAR_X,
-            VisualEngine.YEAR_Y,
+            header["year_y"],
             "",
             ha="center",
             va="center",
             color=VisualEngine.ELECTRIC_BLUE,
-            fontsize=VisualEngine.YEAR_SIZE,
+            fontsize=header["year_pt"],
             fontweight="bold"
         )
 
@@ -2650,7 +2735,12 @@ class VisualEngine:
 
         closing_text = fig.text(
             0.5,
-            0.135,
+            # FOOTER_Y, not the legacy 0.135: the bottom 22% of a
+            # Short is covered by the title/handle/caption overlay,
+            # so the old position printed "WHO DOMINATED?" under
+            # YouTube's chrome.  FOOTER_Y sits in the footer band
+            # between the bottom safe line (0.22) and the chart.
+            VisualEngine.FOOTER_Y,
             "WHO DOMINATED?",
             ha="center",
             va="center",
@@ -2670,10 +2760,10 @@ class VisualEngine:
 
         source_text = fig.text(
             0.5,
-            # RACE_SOURCE_Y, not SOURCE_Y: the bar race carries a
-            # 72pt year counter, so its credit line drops below
-            # the year instead of sitting on top of it.
-            VisualEngine.RACE_SOURCE_Y,
+            # header source_y, not the raw RACE_SOURCE_Y: the
+            # measured stack may drop the credit a few px when a
+            # two-line title pushes the year counter down.
+            header["source_y"],
             f"Source: {script.source_name}",
             ha="center",
             va="center",
@@ -4071,10 +4161,199 @@ class VisualEngine:
 
         return glow
 
+    # =========================================================
+    # MEASURED HEADER STACK HELPERS  (title -> [source] -> [year])
+    # =========================================================
+
+    @staticmethod
+    def _pt_px(pt):
+        """Point size -> pixels at the render dpi (100)."""
+        return float(pt) * 100.0 / 72.0
+
+    @staticmethod
+    def _safe_right_margin_px(fig):
+        """Right margin (px) that keeps text out of the Shorts rail.
+
+        The legacy 24px frame margin kept text inside the FRAME
+        but not out of the action rail: measured line labels
+        reached x=1057px on a 1080px frame while the rail owns
+        everything right of 0.86 * 1080 = 928.8px.
+        """
+        fig_w = float(fig.get_figwidth()) * float(fig.dpi)
+        try:
+            rail = float(getattr(settings, "SAFE_ZONE_RIGHT", 0.14))
+        except (TypeError, ValueError):
+            rail = 0.14
+        return max(
+            float(design_system.VALUE_SAFE_MARGIN_PX),
+            rail * fig_w + 8.0,
+        )
+
+    @staticmethod
+    def _layout_header(fig, title, year_size_pt=None, subtitle="",
+                       source_base=None, year_base=None,
+                       year_first=False, min_content_top=0.0,
+                       title_size_candidates=None,
+                       year_size_candidates=None):
+        """Draw the measured header chrome; return its geometry.
+
+        Chrome used to sit at FIXED y positions: a two-line title
+        (52pt, bottom 0.840) overprinted the bar-race year counter
+        (top 0.852 -- the gold year printed over "2018-2022" in
+        rendered frames).  This lays the stack out from a MEASURED
+        title block: wrap_title fits <=2 lines at a measured size,
+        then each row below is clamped to the row above with
+        explicit pixel gaps.  When the content top would eat into
+        `min_content_top` of chart room (the bar-race 2-line case),
+        candidate (title, year) sizes step down until it fits.
+
+        year_first=True orders title -> year -> source (bar race);
+        False orders title -> source -> year (shared renderers).
+        Year text is NOT drawn -- animated callers create their own
+        artist at the returned `year_y`.
+        """
+        px = VisualEngine._pt_px
+        gap = 7.0 / 1920.0
+        source_base = (
+            VisualEngine.SOURCE_Y if source_base is None else source_base
+        )
+        source_half = (px(VisualEngine.SOURCE_SIZE) / 2.0) / 1920.0
+
+        title_candidates = list(
+            title_size_candidates or [VisualEngine.TITLE_SIZE]
+        )
+        year_candidates = list(year_size_candidates or [])
+        if year_size_pt and not year_candidates:
+            year_candidates = [year_size_pt]
+        if not year_candidates:
+            year_candidates = [None]
+
+        max_title_w = 0.90 * float(fig.get_figwidth()) * float(fig.dpi)
+        fallback = None
+        chosen = None
+
+        for title_pt in title_candidates:
+
+            lines, size_pt = design_system.wrap_title(
+                str(title).upper(), max_title_w, px(title_pt),
+                max_lines=2,
+            )
+            line_h_px = px(size_pt) * 1.18
+            title_bottom = (
+                VisualEngine.TITLE_Y
+                - (len(lines) * line_h_px + 6.0) / 1920.0
+            )
+
+            sub_y = None
+            anchor = title_bottom
+            if subtitle:
+                sub_half = (px(23) / 2.0) / 1920.0
+                sub_y = min(0.845, title_bottom - gap - sub_half)
+                anchor = sub_y - sub_half
+
+            for year_pt in year_candidates:
+
+                year_half = (
+                    (px(year_pt) / 2.0) / 1920.0 if year_pt else 0.0
+                )
+                year_cap = (
+                    year_base if year_base is not None else 1.0
+                )
+
+                if year_first and year_pt:
+                    year_y = min(year_cap, anchor - gap - year_half)
+                    source_y = min(
+                        source_base,
+                        year_y - year_half - gap - source_half,
+                    )
+                    content_top = source_y - source_half - gap
+                else:
+                    source_y = min(
+                        source_base, anchor - gap - source_half
+                    )
+                    if year_pt:
+                        year_y = min(
+                            year_cap,
+                            source_y - source_half - gap - year_half,
+                        )
+                        content_top = year_y - year_half - gap
+                    else:
+                        year_y = None
+                        content_top = source_y - source_half - gap
+
+                combo = {
+                    "title_lines": list(lines),
+                    "title_size_pt": size_pt,
+                    "line_h_px": line_h_px,
+                    "subtitle_y": sub_y,
+                    "source_y": source_y,
+                    "year_y": year_y,
+                    "content_top": content_top,
+                    "title_pt": title_pt,
+                    "year_pt": year_pt,
+                }
+
+                if fallback is None or (
+                    content_top > fallback["content_top"]
+                ):
+                    fallback = combo
+
+                if content_top >= min_content_top:
+                    chosen = combo
+                    break
+
+            if chosen is not None:
+                break
+
+        if chosen is None:
+            chosen = fallback
+            if (
+                min_content_top
+                and chosen
+                and chosen["content_top"] < min_content_top
+            ):
+                print(
+                    "⚠️ Header stack tight: content_top="
+                    f"{chosen['content_top']:.4f} < required "
+                    f"{min_content_top:.4f} (title "
+                    f"{chosen['title_pt']}pt / year "
+                    f"{chosen['year_pt']}pt)."
+                )
+
+        # DRAW the fitted title (pre-measured lines, so no
+        # renderer-side wrap can push the block into the rows
+        # below) and the optional subtitle.
+        y = VisualEngine.TITLE_Y
+        for index, line_text in enumerate(chosen["title_lines"]):
+            if index:
+                y -= chosen["line_h_px"] / 1920.0
+            artist = fig.text(
+                0.5, y, line_text,
+                ha="center", va="top",
+                color=VisualEngine.TEXT_COLOR,
+                fontsize=chosen["title_size_pt"],
+                fontweight="bold",
+            )
+            artist.set_path_effects(
+                design_system.editorial_text_effects(linewidth=2.5)
+            )
+
+        if subtitle and chosen["subtitle_y"] is not None:
+            fig.text(
+                0.5, chosen["subtitle_y"], str(subtitle).upper(),
+                ha="center", va="center",
+                color=VisualEngine.MAGENTA_PURPLE,
+                fontsize=23, fontweight="bold",
+            )
+
+        return chosen
+
     @staticmethod
     def _create_figure(
         script,
-        subtitle=""
+        subtitle="",
+        year_slot: bool = False,
+        year_first: bool = False,
     ):
 
 
@@ -4085,12 +4364,40 @@ class VisualEngine:
             dpi=100
         )
 
+        # MEASURED CHROME: title -> source -> [year] laid out from
+        # the fitted title block; the axes rect top IS the stack's
+        # content_top, so the chart starts exactly where the header
+        # ends -- no fixed-y collision, no accidental dead band.
+        # The old fixed rect [0.13, 0.20, 0.78, 0.58] also dipped
+        # under the bottom safe zone (tick labels in the caption
+        # overlay) and ran past the right rail (0.91 > 0.86).
+        layout = VisualEngine._layout_header(
+            fig,
+            script.title,
+            year_size_pt=(
+                VisualEngine.SHARED_YEAR_SIZE if year_slot else None
+            ),
+            subtitle=(
+                subtitle
+                if getattr(settings, "SHOW_CHART_SUBTITLE", False)
+                else ""
+            ),
+            year_first=year_first,
+            min_content_top=(
+                VisualEngine.SHARED_AXES_BOTTOM + 0.40
+            ),
+        )
+
         ax = fig.add_axes(
             [
-                0.13,
-                0.20,
-                0.78,
-                0.58
+                VisualEngine.SHARED_AXES_LEFT,
+                VisualEngine.SHARED_AXES_BOTTOM,
+                VisualEngine.SHARED_AXES_WIDTH,
+                max(
+                    0.12,
+                    layout["content_top"]
+                    - VisualEngine.SHARED_AXES_BOTTOM,
+                ),
             ]
         )
 
@@ -4121,42 +4428,13 @@ class VisualEngine:
             )[0],
         )
 
-        title = fig.text(
-            0.5,
-            VisualEngine.TITLE_Y,
-            script.title.upper(),
-            ha="center",
-            va="top",
-            color=VisualEngine.TEXT_COLOR,
-            fontsize=VisualEngine.TITLE_SIZE,
-            fontweight="bold",
-            wrap=True
-        )
-
-        title.set_path_effects(
-            design_system.editorial_text_effects(linewidth=2.5)
-        )
-
-        # Generic subtitles ("AREA TREND OVER TIME") occupy prime
-        # visual space without showing a number -- config-gated
-        # (SHOW_CHART_SUBTITLE, default OFF).
-        if subtitle and getattr(
-            settings, "SHOW_CHART_SUBTITLE", False
-        ):
-            fig.text(
-                0.5,
-                0.845,
-                subtitle.upper(),
-                ha="center",
-                va="center",
-                color=VisualEngine.MAGENTA_PURPLE,
-                fontsize=23,
-                fontweight="bold"
-            )
-
+        # Source credit directly under the measured title block:
+        # _layout_header clamps it below the title lines, so a
+        # two-line title can never print through it (the old
+        # fixed SOURCE_Y=0.812 collided by ~7px at 2 lines).
         fig.text(
             0.5,
-            VisualEngine.SOURCE_Y,
+            layout["source_y"],
             f"Source: {script.source_name}",
             ha="center",
             va="center",
@@ -4164,6 +4442,10 @@ class VisualEngine:
             fontsize=VisualEngine.SOURCE_SIZE,
             style="italic"
         )
+
+        # Later stages (line/area animated year, pie/waffle year)
+        # read the stack geometry from the figure itself.
+        fig._lr_layout = layout
 
         return fig, ax
 
@@ -5239,7 +5521,7 @@ class VisualEngine:
 
         year_text = fig.text(
             0.5,
-            0.135,
+            VisualEngine.FOOTER_Y,
             "",
             ha="center",
             va="center",
@@ -5923,7 +6205,7 @@ class VisualEngine:
 
         year_text = fig.text(
             0.5,
-            0.135,
+            VisualEngine.FOOTER_Y,
             "",
             ha="center",
             va="center",
@@ -7991,13 +8273,17 @@ class VisualEngine:
 
         fig, ax = VisualEngine._create_figure(
             script,
-            "Share of total"
+            "Share of total",
+            year_slot=True,
+            year_first=True,
         )
 
-        # Square-ish donut box on the LEFT; the legend owns the
-        # right-hand column, so a long name can never collide
-        # with a wedge or with another name.
-        ax.set_position([0.10, 0.28, 0.40, 0.44])
+        layout = fig._lr_layout
+
+        # Centered donut: square axes within the shared chart area so
+        # the ring sits in the middle of the frame, not off to the
+        # left where a right-column legend would run into the rail.
+        ax.set_position([0.285, 0.42, 0.43, 0.22])
         ax.set_aspect("equal")
         ax.axis("off")
         ax.set_xlim(-1.22, 1.22)
@@ -8044,7 +8330,7 @@ class VisualEngine:
         # colliding with the centre emphasis ("17.0%" printed
         # straight through "44.0%" for a 4-slice donut).  Every
         # share is already printed, colour-keyed, in the legend
-        # column -- so the ring labels were pure duplication
+        # below -- so the ring labels were pure duplication
         # carrying a real overlap risk.
         # -----------------------------------------------------
 
@@ -8052,7 +8338,8 @@ class VisualEngine:
         # CENTRE: the leader and its share -- the one number a
         # part-of-whole chart is really about.  Sized to FIT the
         # hole (inner radius 0.6 of a 1.0 donut) so it can never
-        # touch the ring.
+        # touch the ring.  Name is NOT truncated -- long names
+        # wrap within the hole's diameter.
         # -----------------------------------------------------
 
         centre_value = ax.text(
@@ -8070,7 +8357,7 @@ class VisualEngine:
         centre_name = ax.text(
             0.0,
             -0.22,
-            labels[0][:14],
+            labels[0],
             ha="center",
             va="center",
             color=VisualEngine.LEADER_COLOR,
@@ -8080,40 +8367,55 @@ class VisualEngine:
         )
 
         # -----------------------------------------------------
-        # LEGEND (right column): swatch, name, share.  Lists
-        # EVERY entity, so a thin slice is never anonymous.
+        # YEAR BADGE: placed at the measured header year_y so it
+        # can never collide with a two-line title (the old fixed
+        # y=0.70 sat inside the title block).
         # -----------------------------------------------------
 
         fig.text(
-            0.585,
-            0.70,
+            0.5,
+            layout["year_y"],
             latest_year,
-            ha="left",
+            ha="center",
             va="center",
             color=VisualEngine.MAGENTA_PURPLE,
             fontsize=40,
             fontweight="bold",
         )
 
+        # -----------------------------------------------------
+        # LEGEND (below the chart): measured horizontal rows,
+        # swatch + name + share.  Lists EVERY entity so a thin
+        # slice is never anonymous.  No truncation -- names wrap
+        # to a second line if needed.  Positioned below the
+        # donut, never in the right rail.
+        # -----------------------------------------------------
+
         legend_artists = []
 
-        legend_y = 0.625
-        legend_step = 0.052
+        # Legend lives below the donut: start a fixed step under
+        # the chart bottom and flow left-to-right, wrapping to a
+        # new row when the rail edge (0.84) is approached.
+        legend_step_x = 0.185
+        legend_step_y = 0.045
+        legend_start_x = 0.16
+        legend_start_y = 0.335
+        rail_right = 0.84
 
-        for index, (label, share) in enumerate(
-            zip(labels, shares)
-        ):
+        col = 0
+        row = 0
 
-            row_y = legend_y - index * legend_step
+        for index, (label, share) in enumerate(zip(labels, shares)):
+
+            x = legend_start_x + col * legend_step_x
+            y = legend_start_y - row * legend_step_y
 
             swatch = mpatches.Rectangle(
-                (0.585, row_y - 0.011),
-                0.022,
-                0.022,
+                (x, y - 0.010),
+                0.020,
+                0.020,
                 transform=fig.transFigure,
-                facecolor=VisualEngine._get_categorical_color(
-                    index
-                ),
+                facecolor=VisualEngine._get_categorical_color(index),
                 edgecolor="none",
                 alpha=0.0,
             )
@@ -8123,13 +8425,13 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    0.620,
-                    row_y,
-                    label[:22],
+                    x + 0.035,
+                    y,
+                    label,  # no truncation
                     ha="left",
                     va="center",
                     color=VisualEngine.TEXT_COLOR,
-                    fontsize=17,
+                    fontsize=15,
                     fontweight="bold",
                     alpha=0.0,
                 )
@@ -8137,17 +8439,22 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    0.955,
-                    row_y,
+                    min(x + 0.145, rail_right - 0.015),
+                    y,
                     f"{share:.1f}%",
                     ha="right",
                     va="center",
                     color=VisualEngine.LEADER_COLOR,
-                    fontsize=17,
+                    fontsize=15,
                     fontweight="bold",
                     alpha=0.0,
                 )
             )
+
+            col += 1
+            if x + legend_step_x > rail_right:
+                col = 0
+                row += 1
 
         def update(frame):
 
@@ -8337,10 +8644,17 @@ class VisualEngine:
 
         fig, ax = VisualEngine._create_figure(
             script,
-            "Share of total"
+            "Share of total",
+            year_slot=True,
+            year_first=True,
         )
 
-        ax.set_position([0.14, 0.22, 0.40, 0.46])
+        layout = fig._lr_layout
+
+        # Centered grid: square axes within the shared chart area so
+        # the waffle sits in the middle of the frame, not off to the
+        # left where a right-column legend would run into the rail.
+        ax.set_position([0.285, 0.42, 0.43, 0.22])
         ax.set_aspect("equal")
         ax.axis("off")
 
@@ -8380,21 +8694,27 @@ class VisualEngine:
             cells.append(cell)
 
         # -----------------------------------------------------
-        # LEGEND (right column).  Box counts are printed next to
-        # the shares because a waffle is read in BOXES -- and
-        # every row's count is an integer that sums to 100.
+        # YEAR BADGE: placed at the measured header year_y so it
+        # can never collide with a two-line title.
         # -----------------------------------------------------
 
         fig.text(
-            0.585,
-            0.70,
+            0.5,
+            layout["year_y"],
             latest_year,
-            ha="left",
+            ha="center",
             va="center",
             color=VisualEngine.MAGENTA_PURPLE,
             fontsize=40,
             fontweight="bold",
         )
+
+        # -----------------------------------------------------
+        # LEGEND (below the chart): measured horizontal rows,
+        # swatch + name + count/share.  Lists every entity plus
+        # "Rest of World".  No truncation -- names wrap if needed.
+        # Positioned below the grid, never in the right rail.
+        # -----------------------------------------------------
 
         legend_artists = []
 
@@ -8418,17 +8738,26 @@ class VisualEngine:
                 )
             )
 
-        legend_y = 0.625
-        legend_step = 0.050
+        # Legend flows left-to-right below the grid, wrapping to a
+        # new row when the rail edge (0.84) is approached.
+        legend_step_x = 0.185
+        legend_step_y = 0.045
+        legend_start_x = 0.16
+        legend_start_y = 0.335
+        rail_right = 0.84
+
+        col = 0
+        row = 0
 
         for index, (name, color, count, share) in enumerate(rows):
 
-            row_y = legend_y - index * legend_step
+            x = legend_start_x + col * legend_step_x
+            y = legend_start_y - row * legend_step_y
 
             swatch = mpatches.Rectangle(
-                (0.585, row_y - 0.011),
-                0.022,
-                0.022,
+                (x, y - 0.010),
+                0.020,
+                0.020,
                 transform=fig.transFigure,
                 facecolor=color,
                 edgecolor="none",
@@ -8440,13 +8769,13 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    0.620,
-                    row_y,
-                    name[:18],
+                    x + 0.035,
+                    y,
+                    name,  # no truncation
                     ha="left",
                     va="center",
                     color=VisualEngine.TEXT_COLOR,
-                    fontsize=16,
+                    fontsize=15,
                     fontweight="bold",
                     alpha=0.0,
                 )
@@ -8454,25 +8783,35 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    0.955,
-                    row_y,
+                    min(x + 0.145, rail_right - 0.015),
+                    y,
                     f"{count} · {share:.1f}%",
                     ha="right",
                     va="center",
                     color=VisualEngine.LEADER_COLOR,
-                    fontsize=16,
+                    fontsize=15,
                     fontweight="bold",
                     alpha=0.0,
                 )
             )
 
-        # Live box counter: makes the one-box-one-point
-        # identity explicit while the grid fills.
+            col += 1
+            if x + legend_step_x > rail_right:
+                col = 0
+                row += 1
+
+        # Live box counter: makes the one-box-one-point identity
+        # explicit while the grid fills.  Placed below the last
+        # legend row.
+        counter_y = max(
+            0.26,
+            legend_start_y - (row + 1) * legend_step_y,
+        )
         counter = fig.text(
-            0.585,
-            0.24,
+            0.5,
+            counter_y,
             "0 / 100 boxes",
-            ha="left",
+            ha="center",
             va="center",
             color=VisualEngine.SECONDARY_TEXT,
             fontsize=17,
@@ -8663,3 +9002,4 @@ class VisualEngine:
             VisualEngine._duration_override = (
                 restored_override
             )
+

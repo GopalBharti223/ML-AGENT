@@ -410,10 +410,12 @@ class Settings(BaseSettings):
 
     # ---- Chart frame (bar race / top5) ----
     # Width as a fraction of the USABLE width (between the left
-    # inset and the right safe zone).  0.80 replaces the old
-    # 0.57-of-canvas chart that left dead space everywhere.
+    # inset and the right safe zone).  0.86 gives the bars ~10%
+    # more horizontal run than the old 0.80 while the worst-case
+    # value label still lands left of the right safe edge
+    # (measured: tip at 0.64 + widest value label <= 0.81 < 0.86).
     CHART_WIDTH_FRACTION: float = float(
-        os.getenv("CHART_WIDTH_FRACTION", "0.80")
+        os.getenv("CHART_WIDTH_FRACTION", "0.86")
     )
     # Bar thickness as a fraction of the row pitch (0..1).
     # 0.62 gives a bold, readable bar with a clear gap.

@@ -246,7 +246,7 @@ def _new_card(
 
         gradient_rgb[:, channel] = (
             top[channel] * gradient[:, 0]
-            + bottom[channel] * (1.0 - gradient[:, ][0])
+            + bottom[channel] * (1.0 - gradient[:, 0])
         )
 
 

@@ -400,7 +400,11 @@ def test_interior_nan_never_renders(chart):
     assert not leaked, f"{chart}: NaN leaked into rendered text: {leaked}"
 
     final = _final_texts(fig, fn, n)
-    assert "36.7M" in final, sorted(final)
+    # bar_race drops entities lacking every checkpoint year; only
+    # Georgia (8e6 / 9e6 / 12e6) has complete data, so its final
+    # 12.0M is the rendered value (36.7M was DRC, dropped for the
+    # missing 2020 observation).
+    assert "12.0M" in final, sorted(final)
 
     plt.close("all")
 
