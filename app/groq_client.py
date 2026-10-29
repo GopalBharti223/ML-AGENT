@@ -87,6 +87,19 @@ class GroqLLM:
             or settings.GROQ_MODEL
         )
 
+        # Reasoning models (e.g. openai/gpt-oss-120b) consume tokens on internal reasoning
+        # before outputting content. A max_tokens ceiling below 1024 starves content tokens
+        # and triggers Groq's json_validate_failed error on empty completion.
+        effective_max_tokens = max(max_tokens or 4096, 1024)
+
+        effective_system = system or DEFAULT_SYSTEM_PROMPT
+        if "json" not in effective_system.lower():
+            effective_system = (
+                f"{effective_system} "
+                "You must return ONLY a valid JSON object matching the requested schema. "
+                "Never return markdown, code blocks, or text outside the JSON object."
+            )
+
         last_error = None
 
         for attempt in range(
@@ -123,7 +136,7 @@ class GroqLLM:
                     messages=[
                         {
                             "role": "system",
-                            "content": system
+                            "content": effective_system
                         },
                         {
                             "role": "user",
@@ -131,7 +144,7 @@ class GroqLLM:
                         }
                     ],
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=effective_max_tokens
                 )
 
                 content = (
@@ -147,7 +160,23 @@ class GroqLLM:
                         "Groq returned empty content."
                     )
 
-                return json.loads(content)
+                cleaned_content = content.strip()
+                if cleaned_content.startswith("```"):
+                    lines = cleaned_content.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    cleaned_content = "\n".join(lines).strip()
+
+                try:
+                    return json.loads(cleaned_content)
+                except json.JSONDecodeError:
+                    import re
+                    match = re.search(r"\{.*\}", cleaned_content, re.DOTALL)
+                    if match:
+                        return json.loads(match.group(0))
+                    raise
 
             except json.JSONDecodeError as e:
 
@@ -158,6 +187,33 @@ class GroqLLM:
             except Exception as e:
 
                 last_error = e
+
+                # Handle Groq json_validate_failed (HTTP 400) by attempting an unconstrained fallback
+                if "json_validate_failed" in str(e).lower() and attempt == 0:
+                    try:
+                        fallback_res = client.chat.completions.create(
+                            model=selected_model,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": effective_system
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            temperature=temperature,
+                            max_tokens=effective_max_tokens
+                        )
+                        fb_text = (fallback_res.choices[0].message.content or "").strip()
+                        if fb_text:
+                            import re
+                            fb_match = re.search(r"\{.*\}", fb_text, re.DOTALL)
+                            if fb_match:
+                                return json.loads(fb_match.group(0))
+                    except Exception:
+                        pass
 
                 if not GroqLLM._is_rate_limit(e):
 

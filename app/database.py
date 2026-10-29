@@ -887,31 +887,61 @@ class Database:
 
     def has_video_been_uploaded(
         self,
-        video_path: str
+        video_path: str = "",
+        topic: str = "",
+        title: str = "",
     ) -> bool:
 
-        video_path = str(
-            video_path or ""
-        ).strip()
+        video_path = str(video_path or "").strip()
+        topic = str(topic or "").strip()
+        title = str(title or "").strip()
 
-        if not video_path:
-            return False
+        # Check by exact video_path
+        if video_path:
+            self.cursor.execute(
+                """
+                SELECT 1
+                FROM video_history
+                WHERE video_path = ?
+                  AND upload_status = 'uploaded'
+                LIMIT 1
+                """,
+                (video_path,)
+            )
+            if self.cursor.fetchone() is not None:
+                return True
 
-        self.cursor.execute(
-            """
-            SELECT 1
-            FROM video_history
-            WHERE video_path = ?
-              AND upload_status = 'uploaded'
-            LIMIT 1
-            """,
-            (video_path,)
-        )
+        # Check by topic fingerprint
+        if topic:
+            self.cursor.execute(
+                """
+                SELECT 1
+                FROM video_history
+                WHERE topic = ?
+                  AND upload_status = 'uploaded'
+                LIMIT 1
+                """,
+                (topic,)
+            )
+            if self.cursor.fetchone() is not None:
+                return True
 
-        return (
-            self.cursor.fetchone()
-            is not None
-        )
+        # Check by title
+        if title:
+            self.cursor.execute(
+                """
+                SELECT 1
+                FROM video_history
+                WHERE title = ?
+                  AND upload_status = 'uploaded'
+                LIMIT 1
+                """,
+                (title,)
+            )
+            if self.cursor.fetchone() is not None:
+                return True
+
+        return False
 
     # =====================================================
     # DAILY SUCCESSFUL UPLOAD COUNT

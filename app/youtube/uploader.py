@@ -143,7 +143,7 @@ class YouTubeUploader:
             credentials = flow.run_local_server(
                 port=0,
                 access_type="offline",
-                prompt="consent"
+                prompt="select_account consent"
             )
 
             print(
@@ -362,19 +362,20 @@ class YouTubeUploader:
                 "\n\n#Shorts"
             )
 
-        # -------------------------------------------------
-        # Tags
-        # -------------------------------------------------
-
-        if tags is None:
-
-            tags = []
-
-        tags = [
-            str(tag).strip()
-            for tag in tags
-            if str(tag).strip()
-        ]
+        # Enforce YouTube 500-char limit for comma-separated tags
+        valid_tags = []
+        total_len = 0
+        for tag in (tags or []):
+            tag_clean = str(tag).strip().replace(",", "")
+            if not tag_clean:
+                continue
+            added_len = len(tag_clean) + (1 if valid_tags else 0)
+            if total_len + added_len <= 480:
+                valid_tags.append(tag_clean)
+                total_len += added_len
+            else:
+                break
+        tags = valid_tags
 
         # -------------------------------------------------
         # YouTube request body

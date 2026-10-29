@@ -105,7 +105,7 @@ class WorldBankData:
             try:
 
                 print(
-                    f"🌐 World Bank request "
+                    f"[Net] World Bank request "
                     f"attempt {attempt}/"
                     f"{cls.MAX_RETRIES}"
                 )
@@ -134,14 +134,14 @@ class WorldBankData:
                 last_error = e
 
                 print(
-                    f"⚠️ World Bank connection "
+                    f"[Warn] World Bank connection "
                     f"problem: {e}"
                 )
 
                 if attempt < cls.MAX_RETRIES:
 
                     print(
-                        f"⏳ Retrying in "
+                        f"[Wait] Retrying in "
                         f"{cls.RETRY_DELAY} seconds..."
                     )
 
@@ -157,7 +157,7 @@ class WorldBankData:
                 last_error = e
 
                 print(
-                    f"⚠️ World Bank API error: "
+                    f"[Warn] World Bank API error: "
                     f"{e}"
                 )
 
@@ -172,7 +172,7 @@ class WorldBankData:
                 last_error = e
 
                 print(
-                    f"⚠️ Unexpected World Bank "
+                    f"[Warn] Unexpected World Bank "
                     f"error: {e}"
                 )
 
@@ -183,7 +183,7 @@ class WorldBankData:
                     )
 
         print(
-            f"❌ World Bank request failed "
+            f"[Error] World Bank request failed "
             f"after {cls.MAX_RETRIES} attempts."
         )
 
@@ -235,7 +235,7 @@ class WorldBankData:
         if not payload or len(payload) < 2:
 
             print(
-                "❌ Could not load World Bank "
+                "[Error] Could not load World Bank "
                 "country metadata."
             )
 
@@ -276,7 +276,7 @@ class WorldBankData:
             countries[country_id] = country_name
 
         print(
-            f"🌍 World Bank real countries "
+            f"[Countries] World Bank real countries "
             f"available: {len(countries)}"
         )
 
@@ -308,7 +308,7 @@ class WorldBankData:
         }
 
         print(
-            "📡 Requesting World Bank "
+            "[Fetch] Requesting World Bank "
             "all-country dataset..."
         )
 
@@ -387,7 +387,7 @@ class WorldBankData:
         if raw_data:
 
             print(
-                f"✅ Bulk World Bank request "
+                f"[OK] Bulk World Bank request "
                 f"returned {len(raw_data)} records."
             )
 
@@ -398,11 +398,11 @@ class WorldBankData:
         # -----------------------------------------------------
 
         print(
-            "\n⚠️ Bulk World Bank request failed."
+            "\n[Warn] Bulk World Bank request failed."
         )
 
         print(
-            "🔄 Switching to country-by-country "
+            "[Retry] Switching to country-by-country "
             "fallback mode..."
         )
 
@@ -425,7 +425,7 @@ class WorldBankData:
         ):
 
             print(
-                f"   🌍 [{position}/"
+                f"   [Country] [{position}/"
                 f"{total_countries}] "
                 f"{country_name}"
             )
@@ -454,7 +454,7 @@ class WorldBankData:
             time.sleep(0.05)
 
         print(
-            f"📦 Fallback collected "
+            f"[Data] Fallback collected "
             f"{len(raw_data)} records."
         )
 
@@ -986,7 +986,7 @@ class WorldBankData:
         if story_type not in valid_story_types:
 
             print(
-                f"⚠️ Unknown story type: "
+                f"[Warn] Unknown story type: "
                 f"{story_type}"
             )
 
@@ -1034,7 +1034,7 @@ class WorldBankData:
         if not raw_data:
 
             print(
-                "❌ No World Bank "
+                "[Error] No World Bank "
                 "records returned."
             )
 
@@ -1052,7 +1052,7 @@ class WorldBankData:
         if df.empty:
 
             print(
-                "❌ No valid country "
+                "[Error] No valid country "
                 "data after filtering."
             )
 
@@ -1081,7 +1081,7 @@ class WorldBankData:
         ) < 5:
 
             print(
-                "❌ Not enough years "
+                "[Error] Not enough years "
                 "available."
             )
 
@@ -1112,7 +1112,7 @@ class WorldBankData:
         if df.empty:
 
             print(
-                "❌ No countries have "
+                "[Error] No countries have "
                 "enough data."
             )
 
@@ -1132,7 +1132,7 @@ class WorldBankData:
         if not ranking:
 
             print(
-                "❌ Could not calculate "
+                "[Error] Could not calculate "
                 "story ranking."
             )
 
@@ -1165,7 +1165,7 @@ class WorldBankData:
             for token in unmatched_tokens:
 
                 print(
-                    f"⚠️ Requested country "
+                    f"[Warn] Requested country "
                     f"'{token}' not recognized "
                     "for this dataset; ignoring it."
                 )
@@ -1181,7 +1181,7 @@ class WorldBankData:
             else:
 
                 print(
-                    "⚠️ None of the requested "
+                    "[Warn] None of the requested "
                     "countries matched; "
                     "fetching unrestricted."
                 )
@@ -1204,14 +1204,14 @@ class WorldBankData:
             for code in missing_required:
 
                 print(
-                    f"⚠️ Requested country "
+                    f"[Warn] Requested country "
                     f"'{real_countries.get(code, code)}' "
                     "has no usable data for this "
                     "indicator; skipping it."
                 )
 
             print(
-                "🎯 Country constraint: required "
+                "[Target] Country constraint: required "
                 f"[{', '.join(requested_codes)}] + "
                 "context fill."
             )
@@ -1325,7 +1325,7 @@ class WorldBankData:
         if len(selected) < min_countries:
 
             print(
-                f"❌ Only "
+                f"[Error] Only "
                 f"{len(selected)} "
                 f"usable countries found."
             )
@@ -1344,7 +1344,7 @@ class WorldBankData:
         )
 
         print(
-            "\n📊 STORY DATA QUALITY"
+            "\n[Chart] STORY DATA QUALITY"
         )
 
         print(
@@ -1379,7 +1379,7 @@ class WorldBankData:
         if quality["score"] < 20:
 
             print(
-                "\n⚠️ DATASET REJECTED"
+                "\n[Warn] DATASET REJECTED"
             )
 
             print(
@@ -1397,7 +1397,7 @@ class WorldBankData:
             return pd.DataFrame()
 
         print(
-            "\n✅ World Bank data accepted."
+            "\n[OK] World Bank data accepted."
         )
 
         print(
@@ -1408,7 +1408,7 @@ class WorldBankData:
         print(
             f"Years: "
             f"{selected.columns[0]} "
-            f"→ "
+            f"-> "
             f"{selected.columns[-1]}"
         )
 

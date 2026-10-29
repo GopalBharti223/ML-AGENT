@@ -116,6 +116,7 @@ class ManualTopicEngine:
     # Provider evaluation order mirrors select_best_candidate's
     # default list so priorities hold identically on both paths.
     DEFAULT_PROVIDER_ORDER = [
+        "viral_topics",
         "worldbank",
         "owid",
         "imf",
@@ -373,6 +374,18 @@ class ManualTopicEngine:
             return 4
 
         if keyword in name:
+            return 3
+
+        tokens = [t.strip(",.:;()[]|-") for t in keyword.split() if len(t.strip(",.:;()[]|-")) >= 2]
+        if len(tokens) > 1 and all(t in name for t in tokens):
+            return 3
+
+        # Plural/stem tolerance (e.g. 'smartphones' vs 'smartphone', 'consoles' vs 'console')
+        stem = keyword[:-1] if keyword.endswith("s") and len(keyword) > 3 else keyword
+        if stem in name or stem in code:
+            return 3
+
+        if any(len(w) >= 4 and w in keyword for w in words):
             return 3
 
         if category and keyword in category:
@@ -1911,6 +1924,23 @@ class ManualTopicEngine:
 
             sup_word, sup_noun, sup_scope = wealth_superlative
 
+            try:
+                vt_provider = DataProviderRegistry.get("viral_topics")
+                for ind in vt_provider.list_indicators():
+                    if ind.code == "top_billionaires_net_worth":
+                        print(
+                            "  [SUPERLATIVE] Wealth/net-worth ranking "
+                            f"('{sup_word} {sup_noun}') for '{sup_scope}' "
+                            "-> matched verified Forbes Billionaires Archives."
+                        )
+                        return (
+                            "Wealth ranking via Forbes Billionaires Archives",
+                            [("viral_topics", ind)],
+                            [],
+                        )
+            except Exception:
+                pass
+
             print(
                 "  [SUPERLATIVE] Wealth/net-worth ranking "
                 f"('{sup_word} {sup_noun}') requested for "
@@ -2211,7 +2241,7 @@ class ManualTopicEngine:
         if country_hint:
 
             print(
-                "  🎯 Specific countries/entities "
+                "  [Target] Specific countries/entities "
                 "requested: "
                 f"{', '.join(country_hint)}"
             )

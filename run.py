@@ -742,10 +742,30 @@ def run_test_pipeline():
         # byte-for-byte what it was before.
         # -----------------------------------------------------
 
-        manual_keyword = os.getenv(
-            "RUN_MANUAL_TOPIC",
-            ""
-        ).strip()
+        # -----------------------------------------------------
+        # CLI ARGUMENTS (--topic, --format)
+        # -----------------------------------------------------
+        cli_topic = None
+        cli_format = None
+        args = sys.argv[1:]
+        for idx, arg in enumerate(args):
+            if arg in ("--topic", "-t") and idx + 1 < len(args):
+                cli_topic = args[idx + 1].strip()
+            elif arg.startswith("--topic="):
+                cli_topic = arg.split("=", 1)[1].strip()
+            elif arg in ("--format", "-f") and idx + 1 < len(args):
+                cli_format = args[idx + 1].strip().lower()
+            elif arg.startswith("--format="):
+                cli_format = arg.split("=", 1)[1].strip().lower()
+
+        if cli_format:
+            settings.VIDEO_FORMAT = cli_format
+            print(f"\n🎬 Video format set via CLI: {settings.VIDEO_FORMAT.upper()} ({settings.canvas_width}x{settings.canvas_height})")
+
+        manual_keyword = (
+            cli_topic
+            or os.getenv("RUN_MANUAL_TOPIC", "").strip()
+        )
 
         if (
             not manual_keyword
@@ -864,6 +884,11 @@ def run_test_pipeline():
                 "https://data.worldbank.org"
             )
 
+        force_chart_type = os.getenv("FORCE_CHART_TYPE", "").strip().lower()
+        if force_chart_type:
+            topic_data["chart_type"] = force_chart_type
+            print(f"🎯 Forced chart type: '{force_chart_type}'")
+
         print("\n✅ Topic Generated:")
 
         print(
@@ -894,10 +919,6 @@ def run_test_pipeline():
         # 2. DATA COLLECTION
         # =====================================================
 
-        print("\n" + "=" * 60)
-        print("🌍 STEP 2 — WORLD BANK DATA")
-        print("=" * 60)
-
         indicator_code = topic_data.get(
             "indicator_code",
             "SP.POP.TOTL"
@@ -907,6 +928,11 @@ def run_test_pipeline():
             "provider_id",
             "worldbank"
         )
+
+        provider_name = topic_data.get("source_name") or provider_id.upper()
+        print("\n" + "=" * 60)
+        print(f"📊 STEP 2 — {provider_name.upper()} DATA")
+        print("=" * 60)
 
         try:
 
@@ -1017,7 +1043,7 @@ def run_test_pipeline():
                 for entity in fetch_countries
                 if entity not in selected_countries
             ]
-            if added:
+            if added and _provider_accepts_countries(provider):
                 print(
                     "   Named entities added to the country "
                     f"constraint: {', '.join(added)}"
@@ -1048,10 +1074,28 @@ def run_test_pipeline():
 
         data = provider_result.wide_data
 
+        if hasattr(data, "index") and not data.empty:
+            _norm_index = []
+            for _item in data.index:
+                if isinstance(_item, (tuple, list)) and len(_item) >= 2:
+                    _norm_index.append(str(_item[-1]).strip())
+                elif isinstance(_item, (tuple, list)) and len(_item) == 1:
+                    _norm_index.append(str(_item[0]).strip())
+                else:
+                    _raw = str(_item).strip()
+                    if _raw.startswith("(") and _raw.endswith(")"):
+                        _m = _re.match(r"^\(\s*['\"]?([^'\",]+)['\"]?\s*,\s*['\"]?([^'\"]+)['\"]?\s*\)$", _raw)
+                        if _m:
+                            _raw = _m.group(2).strip()
+                    _norm_index.append(_raw)
+            data.index = _norm_index
+
+        entity_label = "countries" if _provider_accepts_countries(provider) else "entities"
+
         if data.empty:
 
             print(
-                "❌ No World Bank data returned."
+                f"❌ No {provider_name} data returned."
             )
 
             return
@@ -1077,7 +1121,7 @@ def run_test_pipeline():
 
         print(
             f"✅ Data Collected: "
-            f"{len(data)} countries fetched."
+            f"{len(data)} {entity_label} fetched."
         )
 
         print(
@@ -1180,6 +1224,7 @@ def run_test_pipeline():
 
         script.source_name = source_name
         script.source_url = source_url
+        script.indicator_code = topic_data.get("indicator_code", "")
         script.chart_type = topic_data.get(
             "chart_type",
             getattr(
@@ -1189,6 +1234,12 @@ def run_test_pipeline():
             )
             or "bar_race"
         )
+
+        force_chart_type = os.getenv("FORCE_CHART_TYPE", "").strip().lower()
+        if force_chart_type:
+            script.chart_type = force_chart_type
+            for scene in getattr(script, "scenes", []):
+                scene.chart_type = force_chart_type
 
         print(
             f"\n📝 Script Generated: "
@@ -1480,28 +1531,10 @@ def run_test_pipeline():
         print("🎬 STEP 6 — VIDEO ASSEMBLY")
         print("=" * 60)
 
-        final_video_path = (
-            VideoAssembler.create_video(
-                audio_data,
-                visual_data,
-                output_dir,
-                sfx_category=topic_category
-            )
-        )
-
-        print(
-            "\n✅ Final Video assembled:"
-        )
-
-        print(
-            f"   {final_video_path}"
-        )
-
         # -----------------------------------------------------
         # Captions (timed to the REAL narration audio, shifted
         # by the branded intro length when cards are on; written
-        # alongside the final video).  Non-fatal: a None return
-        # simply means no captions this run.
+        # alongside the final video so they can be burned onto frames).
         # -----------------------------------------------------
 
         caption_offset = 0.0
@@ -1525,6 +1558,24 @@ def run_test_pipeline():
             audio_data,
             output_dir,
             time_offset=caption_offset,
+        )
+
+        final_video_path = (
+            VideoAssembler.create_video(
+                audio_data,
+                visual_data,
+                output_dir,
+                sfx_category=topic_category,
+                captions_path=captions_path,
+            )
+        )
+
+        print(
+            "\n✅ Final Video assembled:"
+        )
+
+        print(
+            f"   {final_video_path}"
         )
 
         # =====================================================
@@ -1779,7 +1830,9 @@ def run_test_pipeline():
         # -----------------------------------------------------
 
         if db.has_video_been_uploaded(
-            final_video_path
+            final_video_path,
+            topic=topic_data.get("topic", "") if isinstance(topic_data, dict) else "",
+            title=getattr(script, "title", ""),
         ):
 
             print(
@@ -1795,6 +1848,13 @@ def run_test_pipeline():
                 "No duplicate YouTube upload will be performed."
             )
 
+            return
+
+        if os.getenv("SKIP_UPLOAD", "").strip().lower() in ("true", "1", "yes"):
+            print(
+                "\n⏩ SKIP_UPLOAD enabled: Video generated successfully; upload deferred for visual QA."
+            )
+            print(f"   Final video: {final_video_path}")
             return
 
         # -----------------------------------------------------

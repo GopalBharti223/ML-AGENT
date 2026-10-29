@@ -46,6 +46,13 @@ class MetadataEngine:
         return None
 
     @staticmethod
+    def _clean_indicator_artifacts(text: str) -> str:
+        """Strip technical indicators like (current US$), (constant 2015), brackets, etc."""
+        text = re.sub(r"\s*\([^)]*\)", "", str(text or ""))
+        text = re.sub(r"\s*\[[^\]]*\]", "", text)
+        return re.sub(r"\s+", " ", text).strip(" -:,")
+
+    @staticmethod
     def _apply_winner_title(
         title: str,
         winner: str,
@@ -60,29 +67,23 @@ class MetadataEngine:
         ):
             return None
 
-        subject = str(
-            getattr(script, "indicator_name", "") or ""
+        raw_subject = str(
+            getattr(script, "indicator_name", "") or getattr(script, "title", "") or ""
         ).strip()
-        if not subject:
-            subject = str(
-                getattr(script, "title", "") or ""
-            ).strip()
-        subject = re.sub(
-            r"\s+", " ", subject
-        ).strip(" -")
+        subject = MetadataEngine._clean_indicator_artifacts(raw_subject)
 
         if not subject:
             return None
 
         candidate = (
-            f"{winner} Tops {subject} in {latest_year}?"
+            f"{winner} Leads in {subject} ({latest_year})"
         )
 
         if len(candidate) > 100:
             tokens = subject.split()
             candidate = (
-                f"{winner} Tops "
-                f"{' '.join(tokens[:3])} in {latest_year}?"
+                f"{winner} Leads in "
+                f"{' '.join(tokens[:3])} ({latest_year})"
             )
 
         if 0 < len(candidate) <= 100:
@@ -363,7 +364,11 @@ class MetadataEngine:
         feels as specific as the search-tags field.
         """
 
-        reserved = {"#shorts", "#dataviz"}
+        reserved = {
+            "#shorts", "#dataviz", "#worldbank", "#ourworldindata",
+            "#owid", "#imf", "#oecd", "#unesco", "#wikipedia",
+            "#database", "#statistics", "#data", "#source",
+        }
 
         # 1) Geography: top recognizable countries (for
         #    country stories) - also used as an avoid set.
@@ -467,14 +472,13 @@ class MetadataEngine:
 
             ordered.append(tag)
 
-        # #Shorts is mandatory and must never be pushed out by
-        # a full topic slice (YouTube requires it in the video
-        # description for Shorts classification).  Prepend so it
-        # can NEVER be evicted by the content slice.
-
-        final = ["#Shorts"]
-
-        seen_lc = {"#shorts"}
+        # #Shorts is mandatory for Shorts but omitted for widescreen long-format.
+        if getattr(settings, "is_landscape", False):
+            final = ["#DataViz"]
+            seen_lc = {"#dataviz", "#shorts"}
+        else:
+            final = ["#Shorts"]
+            seen_lc = {"#shorts"}
 
         for tag in ordered:
 
@@ -492,7 +496,32 @@ class MetadataEngine:
 
             final.append(tag)
 
-        return final[:7]
+        # High-intent category discovery pool to ensure 5-6 punchy, viral tags
+        category_name = str(getattr(script, "category", "") or "").lower()
+        topic_lower = (str(getattr(script, "topic", "") or "") + " " + str(getattr(script, "title", "") or "")).lower()
+
+        discovery_pool = []
+        if "india" in topic_lower:
+            discovery_pool.append("#India")
+            discovery_pool.append("#IndianEconomy")
+        if any(term in category_name or term in topic_lower for term in ("economy", "gdp", "trade", "wealth", "market")):
+            discovery_pool.extend(["#Economy", "#Geopolitics", "#GlobalFinance"])
+        elif any(term in category_name or term in topic_lower for term in ("population", "demographic", "people")):
+            discovery_pool.extend(["#Demographics", "#Population", "#GlobalTrends"])
+        elif any(term in category_name or term in topic_lower for term in ("energy", "environment", "power", "climate")):
+            discovery_pool.extend(["#Energy", "#RenewableEnergy", "#GlobalTrends"])
+        else:
+            discovery_pool.extend(["#Facts", "#Trending", "#GlobalTrends"])
+
+        for disc_tag in discovery_pool:
+            low_disc = disc_tag.lower()
+            if low_disc not in seen_lc and low_disc not in reserved:
+                seen_lc.add(low_disc)
+                final.append(disc_tag)
+            if len(final) >= 6:
+                break
+
+        return final[:6]
 
     # -----------------------------------------------------
     # Title format rotation + truthfulness validation
@@ -1296,20 +1325,21 @@ The video's story type is: {story_type_label}.
 
 Other title rules:
 
-- Maximum 70 characters preferred.
+- Maximum 60 characters preferred so full title is visible on mobile Shorts shelf.
+- NEVER include raw database indicators, technical codes, or bracketed units in titles (e.g. NO '(Current US$)', NO '(constant 2015)', NO '[OWID]'). Convert to natural language.
+- FOCUS ON THE PROTAGONIST: If the topic focuses on a specific entity or country (e.g. India, Japan, Tesla), ensure that entity is the primary focus of the title.
+- PUNCHY HOOKS: Prefer high-stakes declarative or duel statements over passive questions with trailing '?'.
 - Interesting but accurate - zero misleading clickbait.
-- A "leads / dominates / tops / #1" claim MUST match the
-  entity's actual rank in the data.
+- A "leads / dominates / tops / #1" claim MUST match the entity's actual rank in the data.
 - Suitable for YouTube Shorts.
 - Do not simply repeat the internal topic title.
 - Never use "Whom"; prefer "Who".
 
 DESCRIPTION
 
-- Maximum approximately 500 characters.
-- FIRST LINE must be the single most surprising
-  verified fact, with its concrete number.
-  No preamble like "This Short...".
+- Maximum approximately 450 characters.
+- FIRST LINE MUST BE A PUNCHY HOOK with the single most surprising verified fact and concrete number (this line is shown in viewer notifications and previews).
+- No preamble like "This Short...".
 - Mention the time period when useful.
 - Name the actual data source briefly.
 - End with ONE short casual invitation to comment.
@@ -1330,11 +1360,11 @@ delete the sentence and say it plainly instead.
 
 HASHTAGS
 
-- Generate 6-10 relevant hashtags.
-- The majority must be specific to THIS video's actual
-  topic/entities (e.g. #InternetPenetration, #Ricciardo,
-  #LaLiga), not generic filler like #Data or #WorldData.
+- Generate 5-7 punchy, high-search-volume hashtags for YouTube Shorts.
 - Always include #Shorts.
+- Mix specific topic/entity tags (e.g. #IndiaEconomy, #GDP) with broad high-volume discovery tags (e.g. #Geopolitics, #Facts, #Trending).
+- NEVER include database or provider names (#WorldBank, #OurWorldInData, #IMF are FORBIDDEN).
+- NEVER use obscure country names or filler.
 
 TAGS
 
@@ -1437,19 +1467,28 @@ RETURN ONLY VALID JSON.
         )
 
         # -------------------------------------------------
-        # Prefer naming the winning country when it is
-        # widely recognizable, e.g. "USA Tops X in 2025?"
+        # Prefer naming the winning country ONLY when the
+        # generated title lacks both a named entity and a
+        # concrete number (pure fallback).
+        # NEVER overwrite creative LLM duels, growth stories,
+        # or stakes titles!
         # -------------------------------------------------
 
-        winner = MetadataEngine._winning_country(
-            data, latest_year
-        )
-        if winner:
-            applied = MetadataEngine._apply_winner_title(
-                title, winner, script, latest_year
+        has_num = bool(re.search(r'\d', title))
+        has_ent = MetadataEngine._title_entity(title, data) is not None
+        if not (has_num or has_ent):
+            winner = MetadataEngine._winning_country(
+                data, latest_year
             )
-            if applied:
-                title = applied
+            if winner:
+                applied = MetadataEngine._apply_winner_title(
+                    title, winner, script, latest_year
+                )
+                if applied:
+                    title = applied
+
+        # Clean any accidental technical indicator artifacts (e.g. (Current US$))
+        title = MetadataEngine._clean_indicator_artifacts(title)
 
         if len(title) > 100:
 
@@ -1573,8 +1612,8 @@ RETURN ONLY VALID JSON.
             raw_metadata.get("title_options") or []
         ):
 
-            option = MetadataEngine._scrub_ai_tells(
-                str(option)
+            option = MetadataEngine._clean_indicator_artifacts(
+                MetadataEngine._scrub_ai_tells(str(option))
             )
 
             if option and option not in title_options:
@@ -1589,15 +1628,17 @@ RETURN ONLY VALID JSON.
         # Final result
         # -------------------------------------------------
 
+        from app.visuals.fonts import sanitize_typography
+
         metadata = {
-            "title": title,
+            "title": sanitize_typography(title),
             "title_format": format_used,
-            "title_options": title_options,
-            "description": description,
+            "title_options": [sanitize_typography(t) for t in title_options],
+            "description": sanitize_typography(description),
             "hashtags": hashtags,
             "tags": tags,
             "category": category,
-            "thumbnail_text": thumbnail_text
+            "thumbnail_text": sanitize_typography(thumbnail_text)
         }
 
         # -------------------------------------------------

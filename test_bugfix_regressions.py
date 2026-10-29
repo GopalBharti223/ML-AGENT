@@ -337,6 +337,46 @@ def test_p1_sec_edgar():
           "malformed/taxonomy-less payload returns {} instead of raising")
 
 
+def test_render_line_flag_synchronization():
+    """Verify that flag icons follow the decluttered stacked_y positions in render_line."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    script = SimpleNamespace(
+        title="Test Disaster Deaths",
+        total_duration=1,
+        indicator_name="Deaths",
+        source_name="Our World in Data",
+        scenes=[],
+    )
+    # Series with a high span (Myanmar: 3846) so y-axis span makes min_gap ~225,
+    # and two close endpoints (Sri Lanka: 854 vs India: 801) where decluttering separates them
+    data = pd.DataFrame({
+        2020: [801.0, 854.0, 3846.0],
+        2021: [801.0, 854.0, 3846.0],
+    }, index=["India", "Sri Lanka", "Myanmar"])
+
+    with patch.object(VisualEngine, "_save_animation", return_value="test.mp4") as mock_save:
+        VisualEngine.render_line(script, data, "scratch/test_tmp")
+        check(mock_save.called, "render_line invoked _save_animation")
+        fig, update_fn, total_frames, output_dir, name = mock_save.call_args[0]
+        # Run final frame (progress = 1.0)
+        artists = update_fn(total_frames - 1)
+        ax = fig.axes[0]
+        from matplotlib.offsetbox import AnnotationBbox
+        flag_artists = [a for a in artists if isinstance(a, AnnotationBbox)]
+        check(len(flag_artists) >= 3, "flags created for all countries")
+        # India is index 0, Sri Lanka is index 1
+        india_flag_y = flag_artists[0].xy[1]
+        sri_lanka_flag_y = flag_artists[1].xy[1]
+        # Decluttering pushes Sri Lanka up so the gap is >= min_label_gap (>> 60.0),
+        # and the flag y matches the decluttered position rather than raw 854!
+        gap = abs(sri_lanka_flag_y - india_flag_y)
+        check(gap > 150.0, f"flags separated by declutter gap ({gap:.1f} > 150.0), not raw 53 data units")
+        check(sri_lanka_flag_y > 900.0, f"Sri Lanka flag moved with decluttered stacked_y ({sri_lanka_flag_y:.1f} > 900.0)")
+        plt.close(fig)
+
+
 def main():
     # check() now raises, so each test is isolated here: a
     # failure is recorded and the remaining tests still run.
@@ -347,6 +387,7 @@ def main():
         test_bug3_country_labels,
         test_bug2_card_fit,
         test_p1_sec_edgar,
+        test_render_line_flag_synchronization,
     ):
         try:
             test()

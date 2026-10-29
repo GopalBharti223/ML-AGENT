@@ -153,5 +153,92 @@ def label_weight():
     return "bold"
 
 
+
+# ---------------------------------------------------------
+# CENTRAL TYPOGRAPHY SANITIZER
+#
+# Bundled fonts (Montserrat-Bold, Inter-Bold) lack extended
+# Unicode dashes (U+2010..U+2015, including U+2011 non-breaking
+# hyphen), mathematical minus (U+2212), curly quotes, and
+# zero-width or non-breaking spaces (U+200B..U+200F, U+FEFF, U+202F).
+# This translates them to 100% font-safe ASCII equivalents
+# while strictly preserving numbers, punctuation intent, and
+# supported Latin accented Unicode characters (e.g. São Tomé).
+# ---------------------------------------------------------
+_TYPOGRAPHY_MAP = {
+    # Hyphens, dashes, and minus signs
+    "\u2010": "-",   # Hyphen
+    "\u2011": "-",   # Non-breaking hyphen
+    "\u2012": "-",   # Figure dash
+    "\u2013": "-",   # En dash
+    "\u2014": "-",   # Em dash
+    "\u2015": "-",   # Horizontal bar
+    "\u2212": "-",   # Mathematical minus sign
+    "\u00AD": "",    # Soft hyphen (discretionary)
+
+    # Quotes and apostrophes
+    "\u2018": "'",   # Left single quote
+    "\u2019": "'",   # Right single quote
+    "\u201A": "'",   # Single low-9 quote
+    "\u201B": "'",   # Single high-reversed-9 quote
+    "\u201C": '"',   # Left double quote
+    "\u201D": '"',   # Right double quote
+    "\u201E": '"',   # Double low-9 quote
+    "\u201F": '"',   # Double high-reversed-9 quote
+    "\u2032": "'",   # Prime
+    "\u2033": '"',   # Double prime
+    "\u02BC": "'",   # Modifier letter apostrophe
+    "\u02BB": "'",   # Modifier letter turned comma
+    "\u00AB": '"',   # Left double angle quotation mark
+    "\u00BB": '"',   # Right double angle quotation mark
+    "\u2039": "'",   # Single left-pointing angle quotation mark
+    "\u203A": "'",   # Single right-pointing angle quotation mark
+
+    # Ellipsis
+    "\u2026": "...", # Horizontal ellipsis
+
+    # Whitespace and formatting characters
+    "\u00A0": " ",   # Non-breaking space
+    "\u202F": " ",   # Narrow non-breaking space
+    "\u2007": " ",   # Figure space
+    "\u2002": " ",   # En space
+    "\u2003": " ",   # Em space
+    "\u2004": " ",   # Three-per-em space
+    "\u2005": " ",   # Four-per-em space
+    "\u2006": " ",   # Six-per-em space
+    "\u2008": " ",   # Punctuation space
+    "\u2009": " ",   # Thin space
+    "\u200A": " ",   # Hair space
+    "\u2028": " ",   # Line separator
+    "\u2029": " ",   # Paragraph separator
+
+    # Zero-width / invisible formatting marks
+    "\u200B": "",    # Zero width space
+    "\u200C": "",    # Zero width non-joiner
+    "\u200D": "",    # Zero width joiner
+    "\u200E": "",    # Left-to-right mark
+    "\u200F": "",    # Right-to-left mark
+    "\uFEFF": "",    # Zero width no-break space / BOM
+}
+_TYPO_TRANSLATE = str.maketrans(_TYPOGRAPHY_MAP)
+
+
+def sanitize_typography(text: str) -> str:
+    """Normalize Unicode punctuation and dashes into ASCII equivalents.
+
+    Guarantees clean rendering across Montserrat, Inter, DejaVu, and Windows fonts,
+    preventing missing-glyph warnings and tofu box rendering while preserving
+    numbers, meaning, and supported non-ASCII Latin characters (e.g. accented letters).
+    """
+    if text is None:
+        return ""
+    return str(text).translate(_TYPO_TRANSLATE)
+
+
+# Canonical alias for Phase 2A typography normalization contract
+sanitize_renderable_text = sanitize_typography
+
+
 # Register eagerly so import cost is paid once, not per render.
 register_fonts()
+

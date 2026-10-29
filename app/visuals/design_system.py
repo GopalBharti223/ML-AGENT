@@ -54,13 +54,13 @@ BRAND_GOLD = "#D4AF37"
 # slot can never drift from the brand accent).
 CATEGORICAL_PALETTE = [
     BRAND_GOLD,  # champagne gold (hero)
-    "#7D8CA3",  # muted slate blue
-    "#6E9887",  # muted sage
-    "#B56A5A",  # muted terracotta
-    "#A67C52",  # muted bronze
-    "#8FA3BF",  # pale slate
-    "#7FA08F",  # pale sage
-    "#C08A78",  # pale terracotta
+    "#38BDF8",  # electric sky blue
+    "#34D399",  # vivid emerald
+    "#F87171",  # bright coral crimson
+    "#FB923C",  # warm amber orange
+    "#C084FC",  # electric violet
+    "#F472B6",  # vibrant rose
+    "#E2E8F0",  # clean pearl slate
 ]
 
 
@@ -663,7 +663,7 @@ def usable_width():
     return max(0.20, safe_right() - safe_left())
 
 
-def chart_frame(vertical_span=None):
+def chart_frame(vertical_span=None, top_limit=None):
     """(left, bottom, width, height) for the bar-race / top5 axes.
 
     Replaces the old CHART_LEFT 0.37 / CHART_WIDTH 0.57 frame that
@@ -675,20 +675,20 @@ def chart_frame(vertical_span=None):
     """
     left = safe_left()
     width = usable_width() * _clamp_frac(
-        getattr(settings, "CHART_WIDTH_FRACTION", 0.80), 0.80, 0.30, 1.0
+        getattr(settings, "CHART_WIDTH_FRACTION", 0.94), 0.94, 0.30, 1.0
     )
 
-    top = safe_top()
+    top = safe_top() if top_limit is None else min(safe_top(), float(top_limit))
     bottom = safe_bottom()
     available = top - bottom
 
     if vertical_span:
         available *= _clamp_frac(vertical_span, 1.0, 0.20, 1.0)
 
-    # Nudge up slightly: a chart optically centred in the usable
-    # band reads low, because the bottom third is overlaid chrome.
-    bottom += available * 0.04
-    height = max(0.12, available * 0.92)
+    # Nudge slightly above safe_bottom so the lowest bar / tick labels
+    # sit cleanly above the bottom chrome and progress bar
+    bottom += available * 0.02
+    height = max(0.12, available * 0.96)
 
     return left, bottom, width, height
 
@@ -788,12 +788,26 @@ def _short_name_map():
 
 
 def short_name(name):
-    """Curated short form of `name`, or `name` unchanged."""
+    """Curated short form of `name`, or `name` cleaned of corporate/legal suffixes."""
     mapping = _short_name_map()
     key = _normalize_key(name)
     if key in mapping:
         return mapping[key]
-    return str(name)
+
+    import re
+    cleaned = str(name).strip()
+    # Strip .com (e.g. "Amazon.com Inc." -> "Amazon")
+    cleaned = re.sub(r'\.com\b', '', cleaned, flags=re.IGNORECASE)
+    # Strip common corporate legal suffixes
+    cleaned = re.sub(
+        r',?\s+(?:Inc|Corporation|Corp|Company|Co|Ltd|LLC|PLC|S\.A|N\.V|GmbH|SE)\.?$',
+        '',
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    # Strip leading "The " if followed by capitalized words (e.g. "The Coca-Cola Company" -> "Coca-Cola")
+    cleaned = re.sub(r'^The\s+', '', cleaned, flags=re.IGNORECASE).strip()
+    return cleaned or str(name)
 
 
 _MEASURE_FIG = {"fig": None}
@@ -817,6 +831,7 @@ def _text_width_px(text, fontsize_pt, family=None, weight="normal"):
     if family is None:
         family = text_family()
 
+    raw_width = None
     try:
         renderer = _measure_renderer()
         if renderer is not None:
@@ -827,12 +842,15 @@ def _text_width_px(text, fontsize_pt, family=None, weight="normal"):
                 family=family, size=fontsize_pt, weight=weight
             )
             path = TextPath((0, 0), str(text), prop=properties)
-            return path.get_extents().width * 100.0 / 72.0
+            raw_width = path.get_extents().width * 100.0 / 72.0
     except Exception:
         pass
 
-    # Heuristic fallback (~0.55 em average advance) -> px.
-    return len(str(text)) * fontsize_pt * 0.55 * 100.0 / 72.0
+    if raw_width is None:
+        raw_width = len(str(text)) * fontsize_pt * 0.55 * 100.0 / 72.0
+
+    # Include stroke and font advance buffer (+6% + 8px) to guarantee zero clipping on mobile
+    return raw_width * 1.06 + 8.0
 
 
 # Public alias: renderers measure label budgets with the same
@@ -982,7 +1000,11 @@ def wrap_title(text, max_width_px, start_px, family=None, max_lines=None):
         max_lines = int(getattr(settings, "UI_TITLE_MAX_LINES", 2) or 2)
     max_lines = max(1, int(max_lines))
 
-    text = " ".join(str(text).split())
+    # Allow clean break on hyphens if connecting two full words: e.g. "SURGE-CAN" -> "SURGE - CAN"
+    # while preserving terms like "UNDER-5" and "COVID-19".
+    import re
+    text = re.sub(r'(?<=[A-Za-z]{2})-(?=[A-Za-z]{2})', ' - ', str(text))
+    text = " ".join(text.split())
     floor_pt = min_pt()
     size_pt = px_to_pt(start_px)
 

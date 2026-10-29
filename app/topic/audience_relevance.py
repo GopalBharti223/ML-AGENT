@@ -68,6 +68,23 @@ RECOGNIZABLE_ENTITIES: Set[str] = {
     "apple", "google", "alphabet", "microsoft", "amazon",
     "meta", "nvidia", "tesla", "netflix", "samsung", "intel",
     "adobe", "openai", "taiwan semiconductor", "tsmc",
+    # major Indian corporate / national titans
+    "tata", "reliance", "reliance industries", "isro", "tcs", "infosys",
+    "wipro", "hdfc", "hdfc bank", "icici", "icici bank", "state bank of india",
+    "sbi", "airtel", "bharti airtel", "adani", "adani group", "lic",
+    "mahindra", "l&t", "larsen & toubro", "bajaj", "maruti", "maruti suzuki",
+    "jio", "upi",
+    # viral gaming, tech & billionaire titans
+    "gta", "grand theft auto", "minecraft", "roblox", "tetris", "wii sports",
+    "pubg", "mario kart", "red dead redemption", "witcher", "fortnite",
+    "league of legends", "genshin impact", "playstation", "nintendo", "xbox", "game boy",
+    "elon musk", "jeff bezos", "bernard arnault", "bill gates", "mark zuckerberg",
+    "warren buffett", "mukesh ambani", "gautam adani", "byd", "tiktok", "wechat",
+    "xiaomi", "avatar", "avengers", "titanic", "nvidia", "saudi aramco",
+    # viral youtube & sports icons
+    "mrbeast", "t-series", "pewdiepie", "cocomelon", "set india",
+    "cristiano ronaldo", "ronaldo", "lionel messi", "messi", "lewandowski", "benzema", "mbappe", "haaland",
+    "sachin tendulkar", "sachin", "virat kohli", "kohli", "rohit sharma", "ricky ponting", "sangakkara", "joe root",
 }
 
 # Provider spellings normalised before matching.
@@ -92,6 +109,16 @@ _ENTITY_ALIASES: Dict[str, str] = {
     "iran, islamic rep.": "iran",
     "egypt, arab rep.": "egypt",
     "uae": "united arab emirates",
+    "reliance industries ltd": "reliance",
+    "reliance industries limited": "reliance",
+    "reliance industries": "reliance",
+    "tata consultancy services": "tcs",
+    "tata motors": "tata",
+    "tata steel": "tata",
+    "tata group": "tata",
+    "bharti airtel limited": "airtel",
+    "state bank of india": "sbi",
+    "hdfc bank limited": "hdfc",
 }
 
 
@@ -538,7 +565,8 @@ def filter_pool(candidates: List, logger=None) -> List:
     if len(survivors) < min_pool:
         survivors = survivors + band_b
 
-    if drop_obscure and len(survivors) < min_pool:
+    # Only widen to band C (obscure) if drop_obscure is explicitly disabled
+    if not drop_obscure and len(survivors) < min_pool:
         survivors = survivors + band_c
 
     # If the gate starved the pool, fall back to the full pool

@@ -2,6 +2,9 @@
 import subprocess
 import os
 
+from app.config import settings
+_settings = settings
+
 
 class VideoAssembler:
 
@@ -490,14 +493,104 @@ class VideoAssembler:
         return False
 
     # =====================================================
-    # STEP 8 — AUDIO CONCAT
+    # STEP 8 — AUDIO CONCAT & LANDSCAPE SYNC
     # =====================================================
+
+    @staticmethod
+    def align_landscape_audio(
+        audio_data: list,
+        output_dir: str,
+        target_total_duration: float = None,
+    ) -> list:
+        """Align each scene's audio narration to start at its planned visual timestamp,
+        inserting clean silence MP3 padding segments between scenes when narration finishes early.
+        Updates item['start_time'] and item['end_time'] in audio_data for exact subtitle sync.
+        Returns a new concat-ready list containing both scene audio and silence pad segments.
+        """
+        audio_dir = os.path.join(output_dir, "audio")
+        os.makedirs(audio_dir, exist_ok=True)
+        padded_concat_list = []
+        timeline_cursor = 0.0
+        planned_cursor = 0.0
+
+        for idx, item in enumerate(audio_data):
+            if item.get("is_silence"):
+                padded_concat_list.append(item)
+                timeline_cursor += float(item.get("actual_duration") or 0.0)
+                continue
+
+            script_dur = float(item.get("script_duration") or 0.0)
+            actual_dur = float(item.get("actual_duration") or 0.0)
+
+            # Planned start time based on cumulative script durations
+            target_start = planned_cursor
+
+            # If current timeline is behind target_start, insert a silence pad
+            if target_start > timeline_cursor + 0.05:
+                silence_dur = round(target_start - timeline_cursor, 3)
+                silence_path = os.path.join(audio_dir, f"silence_pad_{idx}.mp3")
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y",
+                        "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                        "-t", str(silence_dur),
+                        "-c:a", "libmp3lame", "-b:a", "128k",
+                        silence_path
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+                padded_concat_list.append({
+                    "audio_path": silence_path,
+                    "actual_duration": silence_dur,
+                    "is_silence": True
+                })
+                timeline_cursor += silence_dur
+
+            # Now assign scene audio real start & end times
+            item["start_time"] = timeline_cursor
+            padded_concat_list.append(item)
+            timeline_cursor += actual_dur
+            item["end_time"] = timeline_cursor
+
+            # Advance planned cursor for the next scene
+            planned_cursor += max(script_dur, actual_dur)
+
+        # If a target_total_duration is specified and timeline_cursor is short, add tail silence pad
+        if target_total_duration and target_total_duration > timeline_cursor + 0.05:
+            tail_dur = round(target_total_duration - timeline_cursor, 3)
+            tail_path = os.path.join(audio_dir, "silence_tail.mp3")
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                    "-t", str(tail_dur),
+                    "-c:a", "libmp3lame", "-b:a", "128k",
+                    tail_path
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            padded_concat_list.append({
+                "audio_path": tail_path,
+                "actual_duration": tail_dur,
+                "is_silence": True
+            })
+            timeline_cursor += tail_dur
+
+        return padded_concat_list
 
     @staticmethod
     def _create_audio_concat(
         audio_data: list,
         output_dir: str
     ) -> str:
+
+        # Auto-align landscape audio if not already padded
+        if getattr(settings, "is_landscape", False) and not any(item.get("is_silence") for item in audio_data):
+            audio_data = VideoAssembler.align_landscape_audio(audio_data, output_dir)
 
         audio_list_path = os.path.join(
             output_dir,
@@ -511,14 +604,10 @@ class VideoAssembler:
         ) as f:
 
             for audio in audio_data:
-
-                file_name = os.path.basename(
-                    audio["audio_path"]
-                )
-
+                abs_audio_path = os.path.abspath(audio["audio_path"]).replace("\\", "/")
                 # FFmpeg concat format
                 f.write(
-                    f"file '{file_name}'\n"
+                    f"file '{abs_audio_path}'\n"
                 )
 
         full_audio_path = os.path.join(
@@ -696,6 +785,8 @@ class VideoAssembler:
         )
 
         for item in audio_data:
+            if item.get("is_silence"):
+                continue
 
             start = item.get(
                 "start_time",
@@ -722,8 +813,9 @@ class VideoAssembler:
                 - script_duration
             )
 
+            scene_num = item.get("scene_number", "?")
             print(
-                f"Scene {item['scene_number']}: "
+                f"Scene {scene_num}: "
                 f"{start:.2f}s → "
                 f"{end:.2f}s | "
                 f"Audio: {actual:.2f}s | "
@@ -836,7 +928,8 @@ class VideoAssembler:
         audio_data: list,
         visual_data: list,
         output_dir: str,
-        sfx_category: str = None
+        sfx_category: str = None,
+        captions_path: str = None
     ) -> str:
 
         """
@@ -902,9 +995,8 @@ class VideoAssembler:
         # 3. GET REAL MEDIA DURATIONS
         # =================================================
 
-        video_path = visual_data[0][
-            "image_path"
-        ]
+        first_item = visual_data[0]
+        video_path = first_item if isinstance(first_item, str) else first_item["image_path"]
 
         if not os.path.exists(
             video_path
@@ -1008,12 +1100,19 @@ class VideoAssembler:
                     "using the default brand cue."
                 )
 
+            outro_enabled = bool(
+                getattr(_settings, "OUTRO_CARD_ENABLED", False)
+            )
             intro_path = (
                 render_intro_card(output_dir)
                 if _settings.INTRO_CARD_ENABLED
                 else None
             )
-            outro_path = render_outro_card(output_dir)
+            outro_path = (
+                render_outro_card(output_dir)
+                if outro_enabled
+                else None
+            )
 
             branded_video_path = build_branded_video(
                 video_path, output_dir, intro_path, outro_path
@@ -1027,6 +1126,11 @@ class VideoAssembler:
                 ding_variant=sfx_ding_variant,
                 chime_variant=sfx_chime_variant,
             )
+            if not outro_enabled:
+                outro_audio = None
+            if not _settings.INTRO_CARD_ENABLED:
+                intro_audio = None
+            converted_entries = []
             if intro_audio or outro_audio:
                 branded_audio_list = os.path.join(
                     output_dir, "brand_audio_concat.txt"
@@ -1297,11 +1401,13 @@ class VideoAssembler:
                 "voiceover plays."
             )
 
-        # Base video filter: normalize to 1080x1920.
+        # Base video filter: normalize to target canvas (1080x1920 or 1920x1080).
+        target_w = getattr(settings, "canvas_width", 1080)
+        target_h = getattr(settings, "canvas_height", 1920)
         video_filter = (
-            "scale=1080:1920:"
+            f"scale={target_w}:{target_h}:"
             "force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:"
+            f"pad={target_w}:{target_h}:"
             "(ow-iw)/2:"
             "(oh-ih)/2"
         )
@@ -1317,56 +1423,205 @@ class VideoAssembler:
                 f"stop_duration={-hold_seconds:.3f}"
             )
 
-        merge_command = [
-
-            "ffmpeg",
-            "-y",
-
-            "-i",
-            video_path,
-
-            "-i",
-            full_audio_path,
-
-            "-map",
-            "0:v:0",
-
-            "-map",
-            "1:a:0",
-
-            "-c:v",
-            "libx264",
-
-            "-preset",
-            "medium",
-
-            "-crf",
-            "18",
-
-            "-c:a",
-            "aac",
-
-            "-b:a",
-            "192k",
-
-            "-pix_fmt",
-            "yuv420p",
-
-            "-vf",
-            video_filter,
-
-            "-t",
-            f"{final_duration:.3f}",
-
-            "-movflags",
-            "+faststart",
-
-            final_output
-        ]
-
-        VideoAssembler._run_ffmpeg_command(
-            merge_command
+        # -----------------------------------------------------
+        # KINETIC SUBTITLE BURN-IN
+        # -----------------------------------------------------
+        from app.config import settings as _cfg
+        burn_captions = bool(
+            getattr(_cfg, "BURN_CAPTIONS", True)
         )
+        if captions_path is None:
+            candidate_srt = os.path.join(output_dir, "captions.srt")
+            if os.path.isfile(candidate_srt):
+                captions_path = candidate_srt
+
+        if burn_captions and captions_path and os.path.isfile(captions_path):
+            try:
+                escaped_sub = (
+                    str(os.path.abspath(captions_path))
+                    .replace("\\", "/")
+                    .replace(":", "\\:")
+                )
+                # Subtitle styling:
+                # Landscape uses sleek 13pt crisp white documentary captions (&H00FFFFFF) with subtle outline.
+                # Vertical shorts retain large 20pt golden-yellow captions.
+                if getattr(_settings, "is_landscape", False):
+                    sub_filter = (
+                        f"subtitles='{escaped_sub}':force_style="
+                        "'FontName=Arial,Bold=1,FontSize=13,"
+                        "PrimaryColour=&H00FFFFFF,OutlineColour=&H000A0A0A,"
+                        "BorderStyle=1,Outline=1.2,Shadow=0.8,Alignment=2,MarginV=38'"
+                    )
+                else:
+                    sub_filter = (
+                        f"subtitles='{escaped_sub}':force_style="
+                        "'FontName=Arial,Bold=1,FontSize=20,"
+                        "PrimaryColour=&H0000FFFF,OutlineColour=&H000A0A0A,"
+                        "BorderStyle=1,Outline=2.8,Shadow=1.5,Alignment=2,MarginV=35'"
+                    )
+                video_filter += f",{sub_filter}"
+                print("  -> Kinetic on-screen captions burned into video.")
+            except Exception as sub_err:
+                print(f"  -> Caption burning skipped ({sub_err}); continuing.")
+
+        # -----------------------------------------------------
+        # BACKGROUND MUSIC (BGM) AUTO-DUCKING MIX
+        # -----------------------------------------------------
+        bgm_enabled = bool(getattr(_cfg, "BGM_ENABLED", True))
+        bgm_volume = float(getattr(_cfg, "BGM_VOLUME", 0.12))
+        bgm_path = None
+        if bgm_enabled:
+            try:
+                from app.audio.bgm import BGMEngine
+                bgm_path = BGMEngine.pick_bgm(
+                    topic_key=str(output_dir or ""),
+                    category=str(sfx_category or ""),
+                )
+                if bgm_path and not os.path.isfile(str(bgm_path)):
+                    bgm_path = None
+            except Exception as bgm_err:
+                print(f"  -> BGM engine unavailable ({bgm_err}); continuing without BGM.")
+                bgm_path = None
+
+        if bgm_path:
+            print(
+                f"  -> Background music active: {os.path.basename(str(bgm_path))} "
+                f"at {bgm_volume*100:.0f}% volume (auto-ducked)."
+            )
+            amix_dur = "longest" if getattr(settings, "is_landscape", False) else "first"
+            filter_complex = (
+                f"[0:v]{video_filter}[vout];"
+                f"[2:a]aloop=loop=-1:size=2e+09,volume={bgm_volume:.3f}[bgm];"
+                f"[1:a][bgm]amix=inputs=2:duration={amix_dur}:dropout_transition=2[aout]"
+            )
+            merge_command = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-i",
+                full_audio_path,
+                "-i",
+                str(bgm_path),
+                "-filter_complex",
+                filter_complex,
+                "-map",
+                "[vout]",
+                "-map",
+                "[aout]",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "16",
+                "-b:v",
+                "10M",
+                "-maxrate",
+                "14M",
+                "-bufsize",
+                "20M",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-pix_fmt",
+                "yuv420p",
+                "-t",
+                f"{final_duration:.3f}",
+                "-movflags",
+                "+faststart",
+                final_output,
+            ]
+        else:
+            merge_command = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                video_path,
+                "-i",
+                full_audio_path,
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "16",
+                "-b:v",
+                "10M",
+                "-maxrate",
+                "14M",
+                "-bufsize",
+                "20M",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-pix_fmt",
+                "yuv420p",
+                "-vf",
+                video_filter,
+                "-t",
+                f"{final_duration:.3f}",
+                "-movflags",
+                "+faststart",
+                final_output,
+            ]
+
+        try:
+            VideoAssembler._run_ffmpeg_command(
+                merge_command
+            )
+        except Exception as merge_err:
+            if bgm_path or (burn_captions and captions_path):
+                print(
+                    f"\n⚠️ Enhanced merge with BGM/captions failed ({merge_err}); "
+                    "falling back to clean standard video+voiceover merge..."
+                )
+                fallback_command = [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    video_path,
+                    "-i",
+                    full_audio_path,
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "1:a:0",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                    "16",
+                    "-b:v",
+                    "10M",
+                    "-maxrate",
+                    "14M",
+                    "-bufsize",
+                    "20M",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-vf",
+                    f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2",
+                    "-t",
+                    f"{final_duration:.3f}",
+                    "-movflags",
+                    "+faststart",
+                    final_output,
+                ]
+                VideoAssembler._run_ffmpeg_command(fallback_command)
+            else:
+                raise
 
         # =================================================
         # 6. VERIFY FINAL VIDEO

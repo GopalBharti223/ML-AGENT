@@ -29,8 +29,8 @@ class ThumbnailEngine:
     # lets creators A/B test exactly three thumbnails
     # per video, so we render one candidate per style.
     STYLE_ANCHORS = {
-        "bottom": 0.74,
-        "center": 0.50,
+        "bottom": 0.82,
+        "center": 0.22,
         "top": 0.14,
     }
 
@@ -128,6 +128,10 @@ class ThumbnailEngine:
         style: bottom | center | top
         """
 
+        from app.visuals.fonts import sanitize_typography
+
+        text = sanitize_typography(text)
+
         if not str(text).strip():
             return False
 
@@ -163,6 +167,18 @@ class ThumbnailEngine:
         )
 
         y = int(height * anchor) - total_height // 2
+
+        # Editorial dark scrim band behind thumbnail text
+        # guarantees high contrast and prevents visual clashing
+        # with underlying chart bars, flags, or data labels.
+        scrim_pad = int(line_height * 0.40)
+        scrim_top = max(0, y - scrim_pad)
+        scrim_bottom = min(height, y + total_height + scrim_pad)
+        scrim_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        scrim_draw = ImageDraw.Draw(scrim_overlay)
+        scrim_draw.rectangle([0, scrim_top, width, scrim_bottom], fill=(16, 26, 44, 215))
+        image = Image.alpha_composite(image.convert("RGBA"), scrim_overlay).convert("RGB")
+        draw = ImageDraw.Draw(image)
 
         for line in lines:
 

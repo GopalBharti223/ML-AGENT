@@ -2,6 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from app.config import settings
+
 
 class FinalQC:
     """
@@ -175,11 +177,12 @@ class FinalQC:
                 f"{duration:.2f}s"
             )
 
-        if duration > cls.MAX_DURATION:
+        max_allowed_duration = 600.0 if getattr(settings, "is_landscape", False) else cls.MAX_DURATION
+        if duration > max_allowed_duration:
 
             errors.append(
                 f"Video is longer than "
-                f"3 minutes: {duration:.2f}s"
+                f"allowed duration: {duration:.2f}s (max {max_allowed_duration:.0f}s)"
             )
 
         # -----------------------------------------------------
@@ -199,20 +202,23 @@ class FinalQC:
                 "height"
             )
 
-            if width != cls.EXPECTED_WIDTH:
+            exp_w = getattr(settings, "canvas_width", cls.EXPECTED_WIDTH)
+            exp_h = getattr(settings, "canvas_height", cls.EXPECTED_HEIGHT)
+
+            if width != exp_w:
 
                 errors.append(
                     f"Wrong width: {width}. "
                     f"Expected "
-                    f"{cls.EXPECTED_WIDTH}."
+                    f"{exp_w}."
                 )
 
-            if height != cls.EXPECTED_HEIGHT:
+            if height != exp_h:
 
                 errors.append(
                     f"Wrong height: {height}. "
                     f"Expected "
-                    f"{cls.EXPECTED_HEIGHT}."
+                    f"{exp_h}."
                 )
 
         return {
@@ -376,16 +382,17 @@ class FinalQC:
             in hashtags_text.lower()
         )
 
-        if not (
-            shorts_in_description
-            or shorts_in_hashtags
-        ):
+        if not getattr(settings, "is_landscape", False):
+            if not (
+                shorts_in_description
+                or shorts_in_hashtags
+            ):
 
-            errors.append(
-                "Metadata does not contain "
-                "#Shorts in description "
-                "or hashtags."
-            )
+                errors.append(
+                    "Metadata does not contain "
+                    "#Shorts in description "
+                    "or hashtags."
+                )
 
         return {
             "passed": len(errors) == 0,

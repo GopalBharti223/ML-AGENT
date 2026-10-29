@@ -20,6 +20,7 @@ from app.topic.topic_families import (
 )
 from app.topic import audience_relevance
 from app.topic.performance_bias import PerformanceBias
+from app.config import settings
 
 
 # Metric keys written by the audience-relevance gate's annotate().
@@ -237,6 +238,34 @@ class SmartStoryEngine:
     YEAR_WINDOW_ROTATION = True
     YEAR_WINDOW_POOL = (4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15)
 
+    # High-voltage, high-curiosity indicators prioritized for YouTube Shorts retention.
+    # Deprioritizes dry/academic indicators (e.g. fertilizer use, pupil-teacher ratios,
+    # extinction indices) in favor of high-stakes macroeconomic, defense, and tech shifts.
+    HIGH_VOLTAGE_INDICATORS = frozenset({
+        # Macroeconomic & Wealth Races
+        "NY.GDP.MKTP.CD",       # GDP (Current US$)
+        "NY.GDP.PCAP.CD",       # GDP Per Capita (Current US$)
+        "NGDPD",                # IMF GDP in Billions USD
+        "NGDP_RPCH",            # IMF Real GDP Growth %
+        "NGDPDPC",              # IMF GDP Per Capita
+        "PCPIPCH",              # IMF Inflation
+        "gdp_per_capita",       # OWID GDP Per Capita
+        "DT.DOD.DECT.CD",       # External Debt Stocks
+        # Geopolitical & Military Might
+        "MS.MIL.XPND.GD.ZS",    # Military Spending (% of GDP)
+        # Digital Revolution & Connectivity
+        "IT.NET.USER.ZS",       # Internet Users (% of Population)
+        "internet_users",       # OWID Internet Users
+        # Energy & Demographic Surge
+        "EG.ELC.ACCS.ZS",       # Access to Electricity (%)
+        "energy_per_capita",    # OWID Energy Per Capita
+        "SP.POP.TOTL",          # Total Population
+        "population",           # OWID Population
+        # Corporate & Global Sports Dominance
+        "corporate_revenues",
+        "constructor_standings",
+        "driver_standings",
+    })
     
     # Quality gates for candidate filtering
     MIN_QUALITY_SCORE = 5.0  # Reject candidates with very low quality
@@ -430,28 +459,36 @@ class SmartStoryEngine:
 
             all_indicators = provider.list_indicators()
 
-            # FIX (investigation A2/A6): the plain first-N slice
-            # permanently starved indicators beyond the cap
-            # (worldbank: 6 of 11 were never reachable in
-            # automatic mode).  Rotate the starting offset each
-            # run so EVERY indicator eventually gets evaluated
-            # while the per-run fetch budget stays capped.
-            if len(all_indicators) > max_indicators_per_provider:
+            # HIGH-VOLTAGE INDICATOR CURATION:
+            # Prioritizes high-stakes macroeconomic (GDP), defense (military spend),
+            # connectivity (internet), energy, and corporate topics over dry/academic indicators.
+            high_voltage = [
+                ind for ind in all_indicators
+                if ind.code in cls.HIGH_VOLTAGE_INDICATORS
+            ]
+            standard = [
+                ind for ind in all_indicators
+                if ind.code not in cls.HIGH_VOLTAGE_INDICATORS
+            ]
 
-                offset = random.randrange(len(all_indicators))
-
-                rotated = (
-                    all_indicators[offset:]
-                    + all_indicators[:offset]
+            if high_voltage:
+                # Rotate within both pools to preserve diversity while keeping high-voltage first
+                hv_offset = random.randrange(len(high_voltage))
+                hv_rotated = high_voltage[hv_offset:] + high_voltage[:hv_offset]
+                std_offset = random.randrange(len(standard)) if standard else 0
+                std_rotated = standard[std_offset:] + standard[:std_offset] if standard else []
+                ordered_indicators = hv_rotated + std_rotated
+            else:
+                offset = random.randrange(len(all_indicators)) if all_indicators else 0
+                ordered_indicators = (
+                    all_indicators[offset:] + all_indicators[:offset]
+                    if all_indicators else []
                 )
 
-                indicators = rotated[
-                    :max_indicators_per_provider
-                ]
-
+            if len(ordered_indicators) > max_indicators_per_provider:
+                indicators = ordered_indicators[:max_indicators_per_provider]
             else:
-
-                indicators = all_indicators
+                indicators = ordered_indicators
 
             print(
                 f"\n[{provider_id.upper()}] "
@@ -482,13 +519,25 @@ class SmartStoryEngine:
                             f"{cls.DEFAULT_YEARS})"
                         )
 
+                # AUDIENCE TARGETING: when audience relevance is active
+                # and provider supports countries, pass audience countries
+                # hint so target geography (e.g. India) is guaranteed in the
+                # dataset alongside top global competitors.
+                fetch_kwargs = {
+                    "indicator_code": indicator.code,
+                    "years": fetch_years,
+                    "story_type": provider_story,
+                    "min_countries": min_countries,
+                }
+                if getattr(settings, "AUDIENCE_RELEVANCE_ENABLED", True):
+                    raw_audience = getattr(settings, "AUDIENCE_COUNTRIES", "")
+                    if raw_audience and getattr(provider, "supports_countries", lambda: False)():
+                        audience_hint = [c.strip() for c in raw_audience.split(",") if c.strip()]
+                        if audience_hint:
+                            fetch_kwargs["countries"] = audience_hint
+
                 try:
-                    result = provider.fetch_normalized(
-                        indicator_code=indicator.code,
-                        years=fetch_years,
-                        story_type=provider_story,
-                        min_countries=min_countries
-                    )
+                    result = provider.fetch_normalized(**fetch_kwargs)
                 except Exception as error:
 
                     provider_health.record_failure(
@@ -500,6 +549,14 @@ class SmartStoryEngine:
                     print(
                         f"  [X] {indicator.code}: {error}"
                     )
+
+                    err_str = str(error).lower()
+                    if not provider_health.is_available(provider_id) or "429" in err_str or "rate limit" in err_str:
+                        print(
+                            f"  [!] {provider_id.upper()} circuit tripped / rate limited; "
+                            "skipping remaining indicators for this provider."
+                        )
+                        break
 
                     continue
 
@@ -736,6 +793,13 @@ class SmartStoryEngine:
 
         print(
             f"[OK] After performance feedback: "
+            f"{len(final)} candidates"
+        )
+
+        final = cls._apply_trending_boost(final)
+
+        print(
+            f"[OK] After trend candidate boost: "
             f"{len(final)} candidates"
         )
 
@@ -1405,6 +1469,78 @@ class SmartStoryEngine:
         return adjusted
 
     @classmethod
+    def _apply_trending_boost(
+        cls,
+        candidates: List[StoryCandidate]
+    ) -> List[StoryCandidate]:
+        """Boost candidates matching fresh, vetted trending topics.
+
+        Only active when trend_candidates.json is fresh (< 24h old)
+        and carries verified search volume (google_trends or multi-source score >= 3).
+        Never treats RSS response count as search volume.
+        """
+        import os
+        import json
+        from datetime import datetime, timedelta
+
+        trend_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "trend_candidates.json"
+        )
+        if not os.path.isfile(trend_path):
+            return candidates
+
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(trend_path))
+            if datetime.now() - mtime > timedelta(hours=24):
+                return candidates
+
+            with open(trend_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            trend_list = payload.get("candidates", [])
+            if not isinstance(trend_list, list):
+                return candidates
+
+            trusted = []
+            for tc in trend_list:
+                score = tc.get("score", 0)
+                kw = tc.get("keyword", "")
+                p_id = tc.get("provider_id", "")
+                ind_code = tc.get("indicator_code", "")
+                if score >= 3 and p_id and ind_code:
+                    trusted.append((p_id, ind_code, kw, score))
+
+            if not trusted:
+                return candidates
+
+            boosted_count = 0
+            for cand in candidates:
+                for p_id, ind_code, kw, t_score in trusted:
+                    if cand.provider_id == p_id and cand.indicator_code == ind_code:
+                        boost = min(30.0, 15.0 + t_score * 3.0)
+                        cand.score += boost
+                        if isinstance(cand.metrics, dict):
+                            cand.metrics["trending_boost"] = boost
+                            cand.metrics["trending_keyword"] = kw
+                        boosted_count += 1
+                        print(
+                            f"  [TREND BOOST] +{boost:.1f} pts to "
+                            f"{cand.provider_id}/{cand.indicator_code} "
+                            f"(keyword '{kw}', score={cand.score:.1f})"
+                        )
+
+            if boosted_count > 0:
+                print(
+                    f"[TRENDS] Applied search-volume trend boost to {boosted_count} candidates."
+                )
+                candidates.sort(key=lambda item: item.score, reverse=True)
+        except Exception as e:
+            print(f"  [TRENDS] Trend boost skipped: {e}")
+
+        return candidates
+
+    @classmethod
     def _show_candidate_ranking(
         cls,
         candidates: List[StoryCandidate]
@@ -1575,6 +1711,12 @@ class SmartStoryEngine:
                 story_metrics,
                 data
             )
+
+            # Prevent static planetary constants from being selected as historical time-series races
+            if (snapshot_only or provider_id == "solar_system") and chart_type in (
+                "bar_race", "area", "line", "slope", "top5_change"
+            ):
+                continue
 
             story_metrics[
                 "selected_chart_type"

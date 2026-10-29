@@ -132,6 +132,9 @@ class ScriptEngine:
         "debate_starter":
             "End by inviting disagreement - ask if the data "
             "got it right.",
+        "seamless_loop":
+            "End on a fast unfinished bridge line that flows seamlessly "
+            "right back into the video's opening hook, creating an infinite retention loop.",
     }
 
     # ---------------------------------------------------------
@@ -433,7 +436,7 @@ class ScriptEngine:
                 else str(key)
             )
 
-        return {
+        context = {
             "first_year": {
                 "year": _display_year(first_key),
                 "ranking": (
@@ -467,6 +470,28 @@ class ScriptEngine:
                 )
             }
         }
+
+        # Ground-truth mathematical endpoints & deltas (Phase 1 math integrity)
+        from app.ai.math_integrity import MathIntegrityEngine
+        ground_truth = MathIntegrityEngine.compute_ground_truth(data)
+        verified_changes = {}
+        for ent, gt in ground_truth.items():
+            if gt.has_sufficient_data:
+                pct_str = (
+                    f"{gt.pct_change:+.1f}%"
+                    if gt.pct_change is not None
+                    else "N/A (zero baseline)"
+                )
+                verified_changes[ent] = {
+                    "start": round(gt.start_val, 2),
+                    "end": round(gt.end_val, 2),
+                    "absolute_change": round(gt.abs_change, 2),
+                    "percentage_change": pct_str,
+                    "direction": gt.direction,
+                }
+
+        context["verified_changes"] = verified_changes
+        return context
 
     @staticmethod
     def _build_story_context(
@@ -803,11 +828,80 @@ class ScriptEngine:
         )
 
     @staticmethod
+    def _is_sensitive_topic(topic_data: dict, indicator_name: str) -> bool:
+        """Detect if topic involves tragedy, mortality, disease, disaster, poverty, or crisis."""
+        text = " ".join([
+            str(topic_data.get("topic", "")),
+            str(topic_data.get("indicator_code", "")),
+            str(topic_data.get("category", "")),
+            str(indicator_name or "")
+        ]).lower()
+
+        sensitive_keywords = [
+            "death", "mortality", "disaster", "flood", "earthquake",
+            "casualt", "disease", "poverty", "famine", "hunger",
+            "extinct", "suicide", "crime", "homicide", "kill",
+            "crisis", "malnutrition", "epidemic", "pandemic",
+            "conflict", "war", "refugee", "displace"
+        ]
+        return any(kw in text for kw in sensitive_keywords)
+
+    @staticmethod
+    def _sanitize_sensitive_script(script, is_sensitive: bool) -> None:
+        """Strip tone-deaf sports and gaming metaphors from serious topic scripts."""
+        if not is_sensitive or not getattr(script, "scenes", None):
+            return
+
+        import re
+        forbidden_replacements = [
+            (r"\bwinner\b", "highest-ranked"),
+            (r"\bwinners\b", "most affected"),
+            (r"\bwon the race\b", "recorded the highest rate"),
+            (r"\bwon\b", "surpassed"),
+            (r"\bchampion\b", "top country"),
+            (r"\btook the crown\b", "rose to the top"),
+            (r"\btake the crown\b", "rise to the top"),
+            (r"\bcrushed\b", "exceeded"),
+            (r"\bloser\b", "lowest-ranked"),
+            (r"\blosers\b", "least affected"),
+            (r"\bthe race\b", "the trend"),
+        ]
+
+        for scene in script.scenes:
+            narration = getattr(scene, "narration", "")
+            if not narration:
+                continue
+            text = str(narration)
+            for pattern, repl in forbidden_replacements:
+                text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+            scene.narration = text
+
+    @staticmethod
     def generate_script(
         topic_data: dict,
         data: pd.DataFrame,
         indicator_name: str
     ) -> VideoScript:
+
+        # Ensure data.index is normalized to canonical names (e.g. 'India' rather than ('IND', 'India'))
+        if hasattr(data, "index") and not data.empty:
+            _norm_index = []
+            for _item in data.index:
+                if isinstance(_item, (tuple, list)) and len(_item) >= 2:
+                    _norm_index.append(str(_item[-1]).strip())
+                elif isinstance(_item, (tuple, list)) and len(_item) == 1:
+                    _norm_index.append(str(_item[0]).strip())
+                else:
+                    _raw = str(_item).strip()
+                    if _raw.startswith("(") and _raw.endswith(")"):
+                        import re as _re_inline
+                        _m = _re_inline.match(r"^\(\s*['\"]?([^'\",]+)['\"]?\s*,\s*['\"]?([^'\"]+)['\"]?\s*\)$", _raw)
+                        if _m:
+                            _raw = _m.group(2).strip()
+                    _norm_index.append(_raw)
+            if _norm_index != list(data.index):
+                data = data.copy()
+                data.index = _norm_index
 
         chart_type = topic_data.get(
             "chart_type",
@@ -857,6 +951,21 @@ class ScriptEngine:
                 f"{constraint}\n\n"
             )
 
+        is_sensitive = ScriptEngine._is_sensitive_topic(
+            topic_data,
+            indicator_name
+        )
+
+        if is_sensitive:
+            framing_section += (
+                "TONAL SAFETY INSTRUCTION (CRITICAL - SERIOUS REAL-WORLD TOPIC):\n"
+                "This topic touches mortality, natural disaster, disease, human suffering, or crisis.\n"
+                "- NEVER use competitive sports, race, or arcade gaming terminology (\"winner\", \"won\", "
+                "\"loser\", \"champion\", \"crown\", \"crushed\", \"beat out\", \"reign\", \"dominated\").\n"
+                "- Adopt a serious, investigative, and respectful tone. Treat the data with human dignity.\n"
+                "- Focus on the severity, human scale, and real-world causes of the shift.\n\n"
+            )
+
         # -------------------------------------------------
         # Rotate today's creative brief so two runs never
         # produce the same-shaped video.
@@ -881,10 +990,17 @@ class ScriptEngine:
             )
         )
 
+        if is_sensitive and ending_name == "verdict":
+            ending_brief = (
+                "End on a sobering one-line takeaway on what this trajectory means for "
+                "the affected populations and regional stability. Do NOT declare a 'winner'."
+            )
+
         print(
             f"🎨 Style rotation: "
             f"hook={hook_name}, "
             f"ending={ending_name}"
+            f"{' [SERIOUS/TONAL SAFETY ACTIVE]' if is_sensitive else ''}"
         )
 
         # -----------------------------------------------------
@@ -918,13 +1034,15 @@ class ScriptEngine:
             )
         )
 
-        max_words = max(
-            25,
-            int((target_duration - 3.0) * 2.5),
-        )
+        if getattr(settings, "is_landscape", False):
+            max_words = max(50, int((target_duration - 5.0) * 2.1))
+            format_intro = f"Write an epic, high-stakes {target_duration}-second cinematic YouTube widescreen video script"
+        else:
+            max_words = max(25, int((target_duration - 3.0) * 2.5))
+            format_intro = f"Write a {target_duration}-second YouTube Shorts script"
 
         prompt = f"""
-Write a {target_duration}-second YouTube Shorts script that
+{format_intro} that
 sounds like a sharp, fast-talking friend who cannot
 believe what the data just showed them.
 
@@ -1027,12 +1145,10 @@ SCRIPT REQUIREMENTS:
   examples (do not literally copy a skeleton).  In
   particular, avoid repeating "Everyone thinks X..." -
   vary the wording each run.
-- The last scene lands the ending style ({ending_name}).
-- LOOP TRICK: write the final phrase so it flows
-  straight back into the scene 1 hook, so the Short
-  feels seamless when YouTube auto-loops it.
-  Skip it if it would sound forced.
+- SEAMLESS VIRAL LOOP: End the script on a high-energy cliffhanger or bridge sentence that connects seamlessly into the opening hook of Scene 1. Do NOT say goodbye, do NOT say subscribe, and do NOT wrap up with generic broadcast conclusions.
+- HIGH-STAKES STORYTELLING: Treat the data as a high-stakes competition or historic geopolitical battle. Make the gap between #1 and competitors feel thrilling and emotionally charged.
 - Short punchy sentences.
+- CAUSAL DEPTH (The 'Why'): At least one middle scene (Scene 2 or 3) MUST give a concrete causal reason WHY the numbers shifted (e.g. policy reform, economic crash, war, technology boom, infrastructure investment). Do NOT just list number after number; explain what caused the shift so viewers stay invested.
 - Prefer a curiosity-gap title (Who/What/Which/Why)
   so viewers stay to find the answer - but vary the
   wording, never recycle earlier title patterns.
@@ -1227,6 +1343,15 @@ Return ONLY JSON:
             ),
         )
 
+        # -----------------------------------------------------------
+        # TONAL SAFETY SANITIZATION (Serious / Sensitive Topics)
+        # Strips tone-deaf sports and arcade terminology from tragedies.
+        # -----------------------------------------------------------
+        ScriptEngine._sanitize_sensitive_script(
+            script,
+            is_sensitive
+        )
+
 
 
         # -----------------------------------------------------
@@ -1414,6 +1539,27 @@ Return ONLY JSON:
                     f"detail: {rewritten}"
                 )
 
+        # -----------------------------------------------------
+        # DETERMINISTIC MATH INTEGRITY VALIDATION & REPAIR (Phase 1)
+        #
+        # Validate numerical change claims against the validated
+        # DataFrame. If discrepancies are found, perform surgical
+        # repair passes with ground-truth numbers rather than
+        # blind string replacement.
+        # -----------------------------------------------------
+        from app.ai.math_integrity import MathIntegrityEngine, MathIntegrityError
+
+        is_valid = MathIntegrityEngine.repair_script_math(
+            script,
+            data,
+            topic_data,
+            max_retries=2,
+        )
+        if not is_valid:
+            raise MathIntegrityError(
+                "Script failed mathematical integrity validation and could not be safely repaired."
+            )
+
         return script
 
     # (Tier-2d title polish defined once above at line ~593;
@@ -1439,6 +1585,9 @@ Return ONLY JSON:
         settings.TARGET_DURATION is only a fallback when the
         entity count is unknown, clamped into the band.
         """
+
+        if getattr(settings, "is_landscape", False):
+            return int(getattr(settings, "LANDSCAPE_TARGET_DURATION", 85))
 
         band_min = max(
             1,
@@ -1713,10 +1862,11 @@ Return ONLY JSON:
             payload = GroqLLM.generate_structured(
                 prompt,
                 temperature=0.7,
-                max_tokens=120,
+                max_tokens=1024,
                 system=(
                     "You write punchy YouTube Shorts hook "
-                    "lines that lead with concrete data detail."
+                    "lines that lead with concrete data detail. "
+                    "You must return ONLY a valid JSON object matching the requested schema."
                 ),
             )
 

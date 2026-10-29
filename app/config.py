@@ -42,8 +42,22 @@ class Settings(BaseSettings):
     )
 
     # -----------------------------------------------------
-    # VIDEO
     # -----------------------------------------------------
+    # VIDEO FORMAT & DIMENSIONS
+    # -----------------------------------------------------
+    VIDEO_FORMAT: str = os.getenv("VIDEO_FORMAT", "shorts").strip().lower()
+
+    @property
+    def is_landscape(self) -> bool:
+        return self.VIDEO_FORMAT in ("landscape", "widescreen", "horizontal", "long")
+
+    @property
+    def canvas_width(self) -> int:
+        return 1920 if self.is_landscape else 1080
+
+    @property
+    def canvas_height(self) -> int:
+        return 1080 if self.is_landscape else 1920
 
     DAILY_UPLOADS: int = int(
         os.getenv(
@@ -61,7 +75,7 @@ class Settings(BaseSettings):
     TARGET_DURATION: int = int(
         os.getenv(
             "TARGET_DURATION",
-            "24"
+            "22"
         )
     )
 
@@ -75,7 +89,7 @@ class Settings(BaseSettings):
     )
 
     DURATION_BAND_MAX: int = int(
-        os.getenv("DURATION_BAND_MAX", "30")
+        os.getenv("DURATION_BAND_MAX", "24")
     )
 
     # Hard cap for the TTS rate bump used to pull an over-long
@@ -265,6 +279,24 @@ class Settings(BaseSettings):
     )
 
     # -----------------------------------------------------
+    # CONTENT PILLARS (Strategic Channel Focus)
+    #
+    # Focus rotation on high-retention audience pillars:
+    #   Pillar 1: Geopolitics & Global Power (economy, geography, demographics, energy)
+    #   Pillar 2: Technology, Wealth & Market Disruption (AI, tech, brands)
+    # Obscure/trivia categories (e.g. space_science, random ratios)
+    # are deprioritized or gated out when STRATEGIC_PILLARS_ONLY is true.
+    # -----------------------------------------------------
+    STRATEGIC_PILLARS_ONLY: bool = (
+        os.getenv("STRATEGIC_PILLARS_ONLY", "true").lower() == "true"
+    )
+
+    PILLAR_CATEGORIES: str = os.getenv(
+        "PILLAR_CATEGORIES",
+        "economy,countries_geography,population_demographics,energy,artificial_intelligence,technology_internet,companies_brands"
+    )
+
+    # -----------------------------------------------------
     # TITLE STAKES (question-with-stakes titles)
     #
     # Relative weights for the title-format rotation.  Stakes
@@ -289,19 +321,19 @@ class Settings(BaseSettings):
     # -----------------------------------------------------
 
     # Max bars drawn per chart (mobile glanceability).
-    CHART_MAX_BARS: int = int(os.getenv("CHART_MAX_BARS", "4"))
+    CHART_MAX_BARS: int = int(os.getenv("CHART_MAX_BARS", "6"))
 
     # Bars used for the head-to-head "vs" format.
     CHART_BARS_VS: int = int(os.getenv("CHART_BARS_VS", "3"))
-    # Per-chart bar target for the main bar_race renderer (env:
-    # CHART_MAX_BARS).  "vs"-titled videos are further capped to
-    # CHART_BARS_VS.  MAX_CHART_ENTITIES below is the hard ceiling
-    # applied to EVERY renderer through _prepare_chart_data.
-    # Hard cap on entities/bars rendered in ANY chart.  6-8
-    # cramped bars fail on mobile at a glance; the "vs" format
-    # works best at 2-3.  Applied centrally through
-    # VisualEngine._prepare_chart_data so every renderer
-    # (bar_race, line, area, slope, top5_change) respects it.
+
+    # Dedicated ceiling for the animated bar-race renderer.
+    # Bar race geometry is verified up to 6 entities.
+    BAR_RACE_MAX_ENTITIES: int = int(os.getenv("BAR_RACE_MAX_ENTITIES", "6"))
+
+    # Hard cap on entities/bars rendered in standard charts (line,
+    # area, slope, bubble, top5_change). 6-8 cramped lines/areas fail on
+    # mobile at a glance; 2-4 read instantly. Applied centrally through
+    # VisualEngine._prepare_chart_data so standard renderers respect it.
     MAX_CHART_ENTITIES: int = int(os.getenv("MAX_CHART_ENTITIES", "4"))
 
 
@@ -415,11 +447,11 @@ class Settings(BaseSettings):
     # value label still lands left of the right safe edge
     # (measured: tip at 0.64 + widest value label <= 0.81 < 0.86).
     CHART_WIDTH_FRACTION: float = float(
-        os.getenv("CHART_WIDTH_FRACTION", "0.86")
+        os.getenv("CHART_WIDTH_FRACTION", "0.94")
     )
     # Bar thickness as a fraction of the row pitch (0..1).
-    # 0.62 gives a bold, readable bar with a clear gap.
-    BAR_HEIGHT: float = float(os.getenv("BAR_HEIGHT", "0.62"))
+    # 0.72 gives bold, prominent, visually rich bars with balanced gaps.
+    BAR_HEIGHT: float = float(os.getenv("BAR_HEIGHT", "0.72"))
 
     # ---- Legibility floor (1080-wide canvas, dpi=100) ----
     # 1 px == 0.72 pt at dpi=100, so px == pt / 0.72 == pt * 1.389.
@@ -455,6 +487,8 @@ class Settings(BaseSettings):
         "UI_SHORT_NAME_MAP",
         '{'
         '"Democratic Republic of the Congo": "DR Congo",'
+        '"Congo, Dem. Rep.": "DR Congo",'
+        '"Congo, Rep.": "Congo",'
         '"Central African Republic": "CAR",'
         '"Bosnia and Herzegovina": "Bosnia",'
         '"United Arab Emirates": "UAE",'
@@ -464,6 +498,8 @@ class Settings(BaseSettings):
         '"Saudi Arabia": "Saudi",'
         '"South Korea": "S. Korea",'
         '"North Korea": "N. Korea",'
+        '"Korea, Rep.": "S. Korea",'
+        '"Korea, Dem. People\'s Rep.": "N. Korea",'
         '"Russian Federation": "Russia",'
         '"Czech Republic": "Czechia",'
         '"Dominican Republic": "Dominican Rep.",'
@@ -472,7 +508,16 @@ class Settings(BaseSettings):
         '"Saint Vincent and the Grenadines": "St Vincent",'
         '"Solomon Islands": "Solomon Is.",'
         '"Equatorial Guinea": "Eq. Guinea",'
-        '"Guinea-Bissau": "G.-Bissau"'
+        '"Guinea-Bissau": "G.-Bissau",'
+        '"West Bank and Gaza": "West Bank & Gaza",'
+        '"Federated States of Micronesia": "Micronesia",'
+        '"Saint Kitts and Nevis": "St. Kitts",'
+        '"Sao Tome and Principe": "Sao Tome",'
+        '"Venezuela, RB": "Venezuela",'
+        '"Iran, Islamic Rep.": "Iran",'
+        '"Egypt, Arab Rep.": "Egypt",'
+        '"Syrian Arab Republic": "Syria",'
+        '"Yemen, Rep.": "Yemen"'
         '}'
     )
 
@@ -490,7 +535,7 @@ class Settings(BaseSettings):
     # -----------------------------------------------------
 
     OPENING_PAYOFF_SECONDS: float = float(
-        os.getenv("OPENING_PAYOFF_SECONDS", "2.0")
+        os.getenv("OPENING_PAYOFF_SECONDS", "0.0")
     )
 
     # Fraction of the runtime by which the rewind -> forward year
@@ -584,7 +629,8 @@ class Settings(BaseSettings):
     # dominate.  All are standard, widely-available Edge voices.
     VOICE_ROTATION_POOL: str = os.getenv(
         "VOICE_ROTATION_POOL",
-        '["en-US-GuyNeural", "en-US-JennyNeural", '
+        '["en-IN-NeerjaExpressiveNeural", "en-IN-PrabhatNeural", '
+        '"en-US-GuyNeural", "en-US-JennyNeural", '
         '"en-US-AriaNeural", "en-GB-RyanNeural", '
         '"en-US-AndrewNeural"]'
     )
@@ -1091,18 +1137,7 @@ class Settings(BaseSettings):
     # back-to-back.  Empty list disables the hook entirely.
     INTRO_LINE_POOL: str = os.getenv(
         "INTRO_LINE_POOL",
-        '['
-        '"Let\'s see who\'s really winning.",'
-        '"Here\'s a number that might surprise you.",'
-        '"You won\'t believe this gap.",'
-        '"Wait for the leader to change.",'
-        '"The gap here is honestly ridiculous.",'
-        '"Nobody expects the runner-up.",'
-        '"One of these is not close.",'
-        '"Guess before the number lands.",'
-        '"This ranking flips fast.",'
-        '"Watch the top two battle."'
-        ']'
+        "[]"
     )
 
     # Fallback engagement questions used when the LLM comment
@@ -1131,6 +1166,29 @@ class Settings(BaseSettings):
     # accept the retention cost.
     INTRO_CARD_ENABLED: bool = (
         os.getenv("INTRO_CARD_ENABLED", "false").lower() == "true"
+    )
+
+    # Brand outro card AFTER the animation. Default OFF:
+    # showing an outro screen signals the video has ended, causing viewers
+    # to swipe away early and tanking Average Percentage Viewed (APV).
+    # Leaving it OFF enables seamless infinite looping on Shorts.
+    OUTRO_CARD_ENABLED: bool = (
+        os.getenv("OUTRO_CARD_ENABLED", "false").lower() == "true"
+    )
+
+    # Background Music (BGM) Engine: auto-ducks driving suspense / beat tracks
+    # behind narration to eliminate dead-air and boost retention.
+    BGM_ENABLED: bool = (
+        os.getenv("BGM_ENABLED", "true").lower() == "true"
+    )
+    BGM_VOLUME: float = float(
+        os.getenv("BGM_VOLUME", "0.12")
+    )
+
+    # Burn dynamic, high-contrast kinetic captions onto the video frame.
+    # Essential for the 70%+ of mobile viewers watching muted or with low audio.
+    BURN_CAPTIONS: bool = (
+        os.getenv("BURN_CAPTIONS", "true").lower() == "true"
     )
 
     # -----------------------------------------------------
@@ -1171,6 +1229,41 @@ class Settings(BaseSettings):
     # Only videos at least this old are considered settled.
     PERFORMANCE_MIN_AGE_HOURS: int = int(
         os.getenv("PERFORMANCE_MIN_AGE_HOURS", "48")
+    )
+
+    # -----------------------------------------------------
+    # AUDIENCE RELEVANCE & TARGETING
+    # -----------------------------------------------------
+
+    AUDIENCE_RELEVANCE_ENABLED: bool = (
+        os.getenv("AUDIENCE_RELEVANCE_ENABLED", "true").lower() == "true"
+    )
+
+    AUDIENCE_COUNTRIES: str = os.getenv(
+        "AUDIENCE_COUNTRIES",
+        "India"
+    )
+
+    RIVALRY_PAIRS: str = os.getenv(
+        "RIVALRY_PAIRS",
+        "India|China,India|Pakistan,India|UK,India|United Kingdom,India|Germany,India|Japan,India|USA,India|United States,Tata|Reliance,Apple|Samsung,Tesla|BYD,Amazon|Walmart"
+    )
+
+    AUDIENCE_MIN_POOL: int = int(
+        os.getenv("AUDIENCE_MIN_POOL", "4")
+    )
+
+    AUDIENCE_DROP_OBSCURE: bool = (
+        os.getenv("AUDIENCE_DROP_OBSCURE", "true").lower() == "true"
+    )
+
+    STRATEGIC_PILLARS_ONLY: bool = (
+        os.getenv("STRATEGIC_PILLARS_ONLY", "false").lower() == "true"
+    )
+
+    PILLAR_CATEGORIES: str = os.getenv(
+        "PILLAR_CATEGORIES",
+        "economy,technology_internet,countries_geography,companies_brands,energy,population_demographics"
     )
 
     # -----------------------------------------------------

@@ -1,11 +1,11 @@
-﻿import matplotlib
+import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.patches as mpatches
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, FuncFormatter
 import numpy as np
 import pandas as pd
 import os
@@ -14,6 +14,7 @@ import random
 from app.time_labels import coerce_year_label
 from app.config import settings
 from app.visuals import design_system
+from app.visuals.fonts import sanitize_renderable_text
 
 
 class VisualEngine:
@@ -143,13 +144,13 @@ class VisualEngine:
     # BAR
     # =========================================================
 
-    BAR_HEIGHT = float(getattr(settings, "BAR_HEIGHT", 0.62))
+    BAR_HEIGHT = float(getattr(settings, "BAR_HEIGHT", 0.72))
 
     # Never draw a bar narrower than this fraction of the current
     # axis maximum.  Prevents an entity with a genuinely tiny value
     # (relative to the leader) from rendering as an invisible
     # zero-width sliver.
-    MIN_VISIBLE_BAR_FRACTION = 0.015
+    MIN_VISIBLE_BAR_FRACTION = 0.08
 
     # =========================================================
     # LABEL COLLISION
@@ -245,21 +246,21 @@ class VisualEngine:
     # other (measured 40px of overlap): the source now drops
     # below the year, with ~18px of air on both sides.
     CHART_LEFT, CHART_BOTTOM, CHART_WIDTH, CHART_HEIGHT = (
-        design_system.chart_frame(vertical_span=0.80)
+        design_system.chart_frame(top_limit=0.725)
     )
 
-    TITLE_Y = 0.915
+    TITLE_Y = 0.908
     TITLE_SIZE = settings.FONT_TITLE
 
     YEAR_SIZE = settings.FONT_YEAR
     YEAR_X = 0.50
-    YEAR_Y = 0.826
+    YEAR_Y = 0.815
 
-    # Footer credit for the bar race (between chart bottom 0.242
+    # Footer credit for the bar race (between chart bottom 0.225
     # and the bottom safe line 0.22).  The shared SOURCE_Y below
     # is the header placement used by _create_figure renderers,
     # which have no giant year counter to clear.
-    FOOTER_Y = 0.232
+    FOOTER_Y = 0.228
 
     SOURCE_Y = 0.812
     SOURCE_SIZE = settings.FONT_SOURCE
@@ -268,7 +269,7 @@ class VisualEngine:
     # counter so the two never collide (see the header budget
     # above).  Kept separate from SOURCE_Y so the other seven
     # renderers keep their existing chrome position.
-    RACE_SOURCE_Y = 0.7755
+    RACE_SOURCE_Y = 0.758
 
     # =========================================================
     # SHARED CHART FRAME (line / area / slope / bubble / top5)
@@ -282,9 +283,9 @@ class VisualEngine:
     # stack (title -> source -> [year]), so a two-line title
     # can never print over the year indicator.
     # =========================================================
-    SHARED_AXES_LEFT = 0.10
-    SHARED_AXES_BOTTOM = 0.245   # tick labels land 0.229..0.245
-    SHARED_AXES_WIDTH = 0.74     # right edge 0.84 <= 0.86 rail
+    SHARED_AXES_LEFT = 0.08
+    SHARED_AXES_BOTTOM = 0.205   # tick labels land 0.189..0.205
+    SHARED_AXES_WIDTH = 0.78     # right edge 0.86 <= 0.86 rail
 
     # Animated latest-year indicator slot (line / area) and the
     # static year shown by pie / waffle -- 36pt == 50px, well
@@ -1096,12 +1097,22 @@ class VisualEngine:
             except Exception:
                 continue
 
+            label = design_system.short_name(country)
+
             budget_px = tip_px - float(pad_px) - label_x0
 
-            if budget_px <= 0:
+            if budget_px <= design_system.min_pt():
+                # On ultra-short bars, the bar tip sits inside or directly
+                # adjacent to the label start. The per-frame placement adaptively
+                # pins the value text clear of the label right edge, so the label
+                # remains at the legibility floor with emphasis bump capped.
+                base = design_system.min_pt()
+                ceiling = design_system.min_pt()
+                name_texts[index].set_text(label)
+                name_texts[index].set_fontsize(base)
+                sizes[index] = base
+                maxes[index] = base
                 continue
-
-            label = design_system.short_name(country)
 
             # Largest size this label can be drawn at and still
             # clear its own value -- fitted from the size the
@@ -1256,6 +1267,25 @@ class VisualEngine:
                 return False
 
         return True
+
+    @staticmethod
+    def _format_axis_tick(val, pos=None):
+        """Format axis tick numbers cleanly without scientific 1e9 notation."""
+        if val is None or not np.isfinite(val):
+            return ""
+        abs_v = abs(val)
+        if abs_v >= 1e12:
+            return f"{val/1e12:.1f}T".replace(".0T", "T")
+        elif abs_v >= 1e9:
+            return f"{val/1e9:.1f}B".replace(".0B", "B")
+        elif abs_v >= 1e6:
+            return f"{val/1e6:.1f}M".replace(".0M", "M")
+        elif abs_v >= 1e3:
+            return f"{val/1e3:.1f}K".replace(".0K", "K")
+        elif 0 < abs_v < 1:
+            return f"{val:.2f}"
+        else:
+            return f"{val:.0f}"
 
     # =========================================================
     # PREMIUM GRADIENT SYSTEM (CSS-style linear gradients)
@@ -1692,7 +1722,7 @@ class VisualEngine:
         if isinstance(
             data.index,
             pd.MultiIndex
-        ):
+        ) or (len(data.index) > 0 and isinstance(data.index[0], (tuple, list))):
 
             normalized = []
 
@@ -2117,8 +2147,9 @@ class VisualEngine:
         )
 
         ax.set_facecolor(
-            VisualEngine.BG_COLOR
+            "none"
         )
+        ax.patch.set_alpha(0.0)
 
         for spine in ax.spines.values():
             spine.set_visible(False)
@@ -2186,7 +2217,7 @@ class VisualEngine:
         if max_val <= 0:
             max_val = 1
 
-        max_val *= 1.18
+        max_val *= 1.05
 
         ax.set_xlim(
             0,
@@ -2374,7 +2405,8 @@ class VisualEngine:
             # shrinking a known-long name.  Entities with no
             # configured short form keep their full text and
             # shrink exactly as before.
-            label_name = design_system.short_name(country)
+            from app.visuals.fonts import sanitize_renderable_text
+            label_name = sanitize_renderable_text(design_system.short_name(country))
 
             name_font_pt = design_system.fit_fontsize(
                 label_name,
@@ -2650,6 +2682,18 @@ class VisualEngine:
             )
         )
 
+        # Horizontal clearance anchors: pre-measured right edge of each
+        # country label in data coordinates.  Guarantees value texts on
+        # ultra-short bars never render over their own country name.
+        label_right_anchors = (
+            VisualEngine._label_right_anchor_data_x(
+                ax,
+                fig,
+                name_texts,
+                label_base_fonts,
+            )
+        )
+
         # =====================================================
         # STEP 7 — TITLE
         # =====================================================
@@ -2671,7 +2715,7 @@ class VisualEngine:
             min_content_top=(
                 VisualEngine.CHART_BOTTOM
                 + VisualEngine.CHART_HEIGHT
-                + 6.0 / 1920.0
+                + 14.0 / 1920.0
             ),
             title_size_candidates=(
                 VisualEngine.TITLE_SIZE, 46, 42
@@ -2764,7 +2808,7 @@ class VisualEngine:
             # measured stack may drop the credit a few px when a
             # two-line title pushes the year counter down.
             header["source_y"],
-            f"Source: {script.source_name}",
+            f"Source: {sanitize_renderable_text(script.source_name)}",
             ha="center",
             va="center",
             color=VisualEngine.SECONDARY_TEXT,
@@ -3334,10 +3378,26 @@ class VisualEngine:
                     )
                 )
 
-                value_texts[i].set_x(
+                bar_tip_x = (
                     VisualEngine._bar_width(value, max_val)
                     + max_val * 0.012
                 )
+                min_clear_x = (
+                    label_right_anchors[i] + max_val * 0.015
+                    if i < len(label_right_anchors) and label_right_anchors[i] > 0
+                    else (_name_x_data + max_val * 0.08)
+                )
+                raw_target_x = max(bar_tip_x, min_clear_x)
+
+                # Right edge constraint: ensure value text does not breach safe_right
+                safe_right_px = design_system.safe_right() * _FIG_W
+                max_safe_x_data = max_val * (
+                    (safe_right_px - _AXES_LEFT_PX) / _AXES_W_PX
+                )
+                val_margin_data = max_val * 0.06
+                clamped_x = min(raw_target_x, max(0.0, max_safe_x_data - val_margin_data))
+
+                value_texts[i].set_x(clamped_x)
 
                 value_texts[i].set_y(
                     bar_y
@@ -3612,17 +3672,24 @@ class VisualEngine:
 
         try:
             max_bars = int(
-                getattr(settings, "CHART_MAX_BARS", 4)
+                getattr(settings, "CHART_MAX_BARS", 6)
             )
         except (TypeError, ValueError):
-            max_bars = 4
+            max_bars = 6
 
+        # Bar race specifically supports up to CHART_MAX_BARS (default 6)
+        # under dedicated BAR_RACE_MAX_ENTITIES, while standard charts
+        # (line, area, slope, bubble, top5) default to MAX_CHART_ENTITIES (4).
         try:
             hard_cap = int(
-                getattr(settings, "MAX_CHART_ENTITIES", 4)
+                getattr(
+                    settings,
+                    "BAR_RACE_MAX_ENTITIES",
+                    getattr(settings, "CHART_MAX_BARS", 6),
+                )
             )
         except (TypeError, ValueError):
-            hard_cap = 4
+            hard_cap = 6
 
         max_bars = max(
             2,
@@ -3664,22 +3731,19 @@ class VisualEngine:
         labels = []
 
         try:
-
             if isinstance(
                 data.index,
                 pd.MultiIndex,
-            ):
-
+            ) or (len(data.index) > 0 and isinstance(data.index[0], (tuple, list))):
                 for entry in data.index:
-
-                    labels.append(
-                        str(entry[-1])
-                    )
-
+                    if isinstance(entry, (tuple, list)) and len(entry) >= 2:
+                        labels.append(str(entry[-1]).strip())
+                    elif isinstance(entry, (tuple, list)) and len(entry) == 1:
+                        labels.append(str(entry[0]).strip())
+                    else:
+                        labels.append(str(entry).strip())
                 return labels
-
         except Exception:
-
             pass
 
         for entry in data.index:
@@ -4067,11 +4131,15 @@ class VisualEngine:
 
         plt.rcParams[
             "axes.facecolor"
-        ] = VisualEngine.BG_COLOR
+        ] = "none"
 
         plt.rcParams[
             "text.color"
         ] = VisualEngine.TEXT_COLOR
+
+        plt.rcParams[
+            "text.parse_math"
+        ] = False
 
         # Bundled Montserrat/Inter (registered once by
         # app.visuals.fonts); degrades to DejaVu Sans.
@@ -4212,8 +4280,14 @@ class VisualEngine:
         Year text is NOT drawn -- animated callers create their own
         artist at the returned `year_y`.
         """
+        from app.visuals.fonts import sanitize_typography, sanitize_renderable_text
+        title = sanitize_renderable_text(title)
+        if subtitle:
+            subtitle = sanitize_renderable_text(subtitle)
+
+
         px = VisualEngine._pt_px
-        gap = 7.0 / 1920.0
+        gap = 14.0 / 1920.0
         source_base = (
             VisualEngine.SOURCE_Y if source_base is None else source_base
         )
@@ -4228,14 +4302,14 @@ class VisualEngine:
         if not year_candidates:
             year_candidates = [None]
 
-        max_title_w = 0.90 * float(fig.get_figwidth()) * float(fig.dpi)
+        max_title_w = 0.78 * float(fig.get_figwidth()) * float(fig.dpi)
         fallback = None
         chosen = None
 
         for title_pt in title_candidates:
 
             lines, size_pt = design_system.wrap_title(
-                str(title).upper(), max_title_w, px(title_pt),
+                title.upper(), max_title_w, px(title_pt),
                 max_lines=2,
             )
             line_h_px = px(size_pt) * 1.18
@@ -4323,6 +4397,10 @@ class VisualEngine:
         # DRAW the fitted title (pre-measured lines, so no
         # renderer-side wrap can push the block into the rows
         # below) and the optional subtitle.
+        # Explicit fontfamily (Montserrat) so the title does NOT
+        # fall back to rcParams font.family (Inter), which lacks
+        # glyphs such as U+2011 NON-BREAKING HYPHEN.
+        _title_family = design_system.title_family()
         y = VisualEngine.TITLE_Y
         for index, line_text in enumerate(chosen["title_lines"]):
             if index:
@@ -4333,6 +4411,8 @@ class VisualEngine:
                 color=VisualEngine.TEXT_COLOR,
                 fontsize=chosen["title_size_pt"],
                 fontweight="bold",
+                fontfamily=_title_family,
+                parse_math=False,
             )
             artist.set_path_effects(
                 design_system.editorial_text_effects(linewidth=2.5)
@@ -4344,6 +4424,7 @@ class VisualEngine:
                 ha="center", va="center",
                 color=VisualEngine.MAGENTA_PURPLE,
                 fontsize=23, fontweight="bold",
+                parse_math=False,
             )
 
         return chosen
@@ -4401,9 +4482,8 @@ class VisualEngine:
             ]
         )
 
-        ax.set_facecolor(
-            VisualEngine.BG_COLOR
-        )
+        ax.set_facecolor("none")
+        ax.patch.set_alpha(0.0)
 
         for spine in ax.spines.values():
             spine.set_visible(False)
@@ -4435,12 +4515,27 @@ class VisualEngine:
         fig.text(
             0.5,
             layout["source_y"],
-            f"Source: {script.source_name}",
+            f"Source: {sanitize_renderable_text(script.source_name)}",
             ha="center",
             va="center",
             color=VisualEngine.SECONDARY_TEXT,
             fontsize=VisualEngine.SOURCE_SIZE,
-            style="italic"
+            style="italic",
+            parse_math=False,
+        )
+
+        # Lower-third broadcast branding (replaces dead empty black void with verified data badge)
+        fig.text(
+            0.5,
+            0.135,
+            "LR ATLAS  \u2022  DATA VERIFIED",
+            ha="center",
+            va="center",
+            color=VisualEngine.SECONDARY_TEXT,
+            fontsize=13,
+            fontweight="bold",
+            alpha=0.55,
+            parse_math=False,
         )
 
         # Later stages (line/area animated year, pie/waffle year)
@@ -4481,10 +4576,22 @@ class VisualEngine:
             bitrate=12000
         )
 
+        def _render_progress(current_frame, total):
+            if current_frame % 30 == 0 or current_frame >= total - 1:
+                pct = int((current_frame + 1) / total * 100) if total else 0
+                print(
+                    f"🎬 Rendering animation: {pct}% "
+                    f"({current_frame + 1}/{total} frames)...",
+                    end="\r",
+                    flush=True,
+                )
+
         ani.save(
             output_path,
-            writer=writer
+            writer=writer,
+            progress_callback=_render_progress,
         )
+        print()
 
         plt.close(fig)
 
@@ -4519,7 +4626,7 @@ class VisualEngine:
     @staticmethod
     def _indicator_name(script):
 
-        return getattr(
+        raw = getattr(
             script,
             "indicator_name",
             getattr(
@@ -4528,6 +4635,7 @@ class VisualEngine:
                 ""
             )
         )
+        return sanitize_renderable_text(raw)
 
     # =========================================================
     # COUNTRY FLAG ICONS
@@ -4697,7 +4805,7 @@ class VisualEngine:
         # Production-run visibility: proves the flag
         # pipeline executed during real renders.
         print(
-            f"🚩 Flags ready: {len(codes)} "
+            f"[Flags] Flags ready: {len(codes)} "
             f"unique code(s) cached in {flag_dir}"
         )
 
@@ -4999,6 +5107,56 @@ class VisualEngine:
         return anchors
 
     @staticmethod
+    def _label_right_anchor_data_x(
+        ax,
+        fig,
+        name_texts,
+        base_fonts,
+    ):
+        """Pre-measure each label's RIGHT edge, in data coordinates,
+        at every font size the animation will ever apply (base, base+1, base+2).
+        Returns a list parallel to name_texts with the worst-case (maximum right edge).
+        Guarantees values never render over the label even on tiny bars.
+        """
+        right_edges = []
+        try:
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+        except Exception:
+            return [0.0] * len(name_texts)
+
+        for index, text in enumerate(name_texts):
+            if index >= len(base_fonts):
+                right_edges.append(0.0)
+                continue
+            base_pt = float(base_fonts[index])
+            max_right_x = 0.0
+            for bump in range(VisualEngine.LABEL_FONT_BUMP + 1):
+                try:
+                    text.set_fontsize(base_pt + bump)
+                    extent = text.get_window_extent(renderer=renderer)
+                    x_data, _ = ax.transData.inverted().transform((extent.x1, extent.y0))
+                    max_right_x = max(max_right_x, float(x_data))
+                except Exception:
+                    pass
+            try:
+                text.set_fontsize(base_pt)
+            except Exception:
+                pass
+            if max_right_x <= 0.0:
+                pos_x = text.get_position()[0]
+                text_len = len(str(text.get_text() or ""))
+                approx_width_data = ax.get_xlim()[1] * 0.015 * max(1, min(text_len, 25))
+                max_right_x = pos_x + approx_width_data
+            right_edges.append(max_right_x)
+
+        try:
+            fig.canvas.draw()
+        except Exception:
+            pass
+        return right_edges
+
+    @staticmethod
     def _flag_vertical_offsets(
         ax,
         fig,
@@ -5152,7 +5310,7 @@ class VisualEngine:
         ax.add_artist(box)
 
         # Production-run visibility: one line per attached flag.
-        print(f"🚩 Flag attached: {country_name}")
+        print(f"[Flag] Flag attached: {country_name}")
 
         return box
 
@@ -5190,7 +5348,8 @@ class VisualEngine:
 
         fig, ax = VisualEngine._create_figure(
             script,
-            "Trend over time"
+            "Trend over time",
+            year_slot=True,
         )
 
         y_min = float(
@@ -5218,12 +5377,14 @@ class VisualEngine:
         )
         ax.tick_params(
             colors=VisualEngine.SECONDARY_TEXT,
-            labelsize=14
+            labelsize=16
         )
         ax.grid(
             True,
+            axis="y",
             color="#27313D",
-            alpha=0.55,
+            alpha=0.35,
+            linestyle="--",
             linewidth=1
         )
 
@@ -5237,6 +5398,10 @@ class VisualEngine:
             ax.xaxis.set_major_locator(
                 MaxNLocator(integer=True)
             )
+
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(VisualEngine._format_axis_tick)
+        )
 
         # Shared LR Atlas categorical system (gold-led, muted
         # companions) instead of a renderer-local hard-coded set.
@@ -5255,7 +5420,7 @@ class VisualEngine:
                 [],
                 [],
                 color=color,
-                linewidth=4,
+                linewidth=4.5,
                 solid_capstyle="round"
             )
             # Bar-matched line treatment: round joins plus the
@@ -5265,7 +5430,7 @@ class VisualEngine:
             design_system.apply_line_depth(
                 line,
                 [color],
-                width=4,
+                width=4.5,
                 glow=(index == 0),
             )
             marker, = ax.plot(
@@ -5273,14 +5438,14 @@ class VisualEngine:
                 [],
                 "o",
                 color=color,
-                markersize=10
+                markersize=11
             )
             label = ax.text(
                 years[0],
                 data.loc[country, years[0]],
-                country,
+                sanitize_renderable_text(design_system.short_name(country)),
                 color=VisualEngine.TEXT_COLOR,
-                fontsize=17,
+                fontsize=20,
                 fontweight="bold",
                 ha="left",
                 va="center"
@@ -5377,8 +5542,9 @@ class VisualEngine:
 
         # LABEL HIERARCHY offsets: keep the value clear of the
         # entity name instead of stacking both on one anchor.
+        _total_span = (y_max + padding) - (y_min - padding)
         label_stack = design_system.label_stack(
-            padding if padding > 0 else 1.0
+            _total_span if _total_span > 0 else 1.0
         )
 
         for value_label in value_labels:
@@ -5443,11 +5609,14 @@ class VisualEngine:
             )
             value_labels[0].set_text("")
 
+            _val_dy = _name_h * 0.5 + 4.0 * _px_to_y
+            label_stack["entity_dy"] = 0.0
+            label_stack["value_dy"] = _val_dy
+
             _min_label_gap = (
-                (label_stack["value_dy"] - label_stack["entity_dy"])
+                _name_h
                 + _value_h
-                + _name_h * 0.5
-                + 10.0 * _px_to_y
+                + 16.0 * _px_to_y
             )
 
         except Exception:
@@ -5519,14 +5688,15 @@ class VisualEngine:
 
                 flag_boxes.append(None)
 
+        layout = fig._lr_layout
         year_text = fig.text(
             0.5,
-            VisualEngine.FOOTER_Y,
+            layout["year_y"],
             "",
             ha="center",
             va="center",
-            color=VisualEngine.ELECTRIC_BLUE,
-            fontsize=44,
+            color=VisualEngine.MAGENTA_PURPLE,
+            fontsize=40,
             fontweight="bold"
         )
 
@@ -5572,7 +5742,8 @@ class VisualEngine:
                 design_system.apply_entrance_alpha(
                     list(lines)
                     + list(markers)
-                    + list(labels),
+                    + list(labels)
+                    + [box for box in flag_boxes if box is not None],
                     frame,
                     payoff_frames,
                 )
@@ -5806,6 +5977,16 @@ class VisualEngine:
                         )
                     )
 
+                    # FLAG-LABEL SYNCHRONIZATION: The country's flag
+                    # icon MUST follow the decluttered stacked_y position
+                    # of its corresponding country name and value.
+                    # Anchoring solely to raw true_y left flags stranded
+                    # at line endpoints when text was pushed apart, causing
+                    # severe visual mismatch (e.g. Sri Lanka flag beside
+                    # Thailand text).
+                    if flag_boxes[item_index] is not None:
+                        flag_boxes[item_index].xy = (x, stacked_y)
+
             year_text.set_text(
                 str(
                     years[year_index]
@@ -5869,7 +6050,8 @@ class VisualEngine:
 
         fig, ax = VisualEngine._create_figure(
             script,
-            "Area trend over time"
+            "Area trend over time",
+            year_slot=True,
         )
 
         # -------------------------------------------------
@@ -5987,14 +6169,23 @@ class VisualEngine:
             str(years[i])
             for i in tick_indexes
         ])
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(VisualEngine._format_axis_tick)
+        )
+        try:
+            ax.yaxis.get_major_formatter().set_useOffset(False)
+        except Exception:
+            pass
         ax.tick_params(
             colors=VisualEngine.SECONDARY_TEXT,
             labelsize=15
         )
         ax.grid(
             True,
+            axis="y",
             color="#27313D",
-            alpha=0.5,
+            alpha=0.35,
+            linestyle="--",
             linewidth=1
         )
 
@@ -6052,7 +6243,7 @@ class VisualEngine:
                 ax.text(
                     min_x,
                     baseline,
-                    entity,
+                    sanitize_renderable_text(design_system.short_name(entity)),
                     color=VisualEngine.TEXT_COLOR,
                     fontsize=17,
                     fontweight="bold",
@@ -6203,14 +6394,15 @@ class VisualEngine:
             except Exception:
                 continue
 
+        layout = fig._lr_layout
         year_text = fig.text(
             0.5,
-            VisualEngine.FOOTER_Y,
+            layout["year_y"],
             "",
             ha="center",
             va="center",
-            color=VisualEngine.ELECTRIC_BLUE,
-            fontsize=44,
+            color=VisualEngine.MAGENTA_PURPLE,
+            fontsize=40,
             fontweight="bold"
         )
 
@@ -6722,7 +6914,7 @@ class VisualEngine:
             left_label = ax.text(
                 -0.04,
                 left_rows[index],
-                country,
+                sanitize_renderable_text(design_system.short_name(country)),
                 ha="right",
                 va="center",
                 color=VisualEngine.TEXT_COLOR,
@@ -6732,7 +6924,7 @@ class VisualEngine:
             right_label = ax.text(
                 1.04,
                 right_rows[index],
-                country,
+                sanitize_renderable_text(design_system.short_name(country)),
                 ha="left",
                 va="center",
                 color=VisualEngine.TEXT_COLOR,
@@ -7022,27 +7214,32 @@ class VisualEngine:
 
             ax.set_yticks([])
             ax.set_xticks([])
-            ax.set_title(
-                "Single metric available",
-                color=VisualEngine.MAGENTA_PURPLE,
-                fontsize=22,
-                fontweight="bold"
-            )
-            fig.text(
-                0.5,
-                0.135,
-                "Bubble relationships need explicit x and y metrics",
-                ha="center",
-                va="center",
-                color=VisualEngine.SECONDARY_TEXT,
-                fontsize=18
-            )
+
+            value_labels = []
+            for position, val in enumerate(sorted_values.values):
+                fmt = VisualEngine._format_value(float(val), indicator)
+                v_lbl = ax.text(
+                    float(val) + span * 0.03,
+                    position,
+                    fmt,
+                    va="center",
+                    ha="left",
+                    color=VisualEngine.LEADER_COLOR,
+                    fontsize=VisualEngine.VALUE_FONT_SIZE,
+                    fontweight="bold",
+                    clip_on=False,
+                    alpha=0.0,
+                )
+                v_lbl.set_path_effects(
+                    design_system.editorial_text_effects(linewidth=2.0)
+                )
+                value_labels.append(v_lbl)
 
             name_labels = [
                 ax.text(
                     name_anchor_x,
                     position,
-                    str(name),
+                    sanitize_renderable_text(str(name)),
                     va="center",
                     ha="right",
                     color=VisualEngine.TEXT_COLOR,
@@ -7057,6 +7254,7 @@ class VisualEngine:
                 fig,
                 ax,
                 name_labels,
+                min_font_pt=8.0,
             )
 
             # -----------------------------------------
@@ -7103,7 +7301,9 @@ class VisualEngine:
                 )
                 for bar in bars:
                     bar.set_alpha(progress)
-                return list(bars) + name_labels
+                for vl in value_labels:
+                    vl.set_alpha(progress)
+                return list(bars) + name_labels + value_labels
 
             return VisualEngine._save_animation(
                 fig,
@@ -7192,7 +7392,7 @@ class VisualEngine:
             label = ax.text(
                 x_values[country],
                 y_values[country],
-                country,
+                sanitize_renderable_text(design_system.short_name(country)),
                 color=VisualEngine.TEXT_COLOR,
                 fontsize=14,
                 fontweight="bold",
@@ -7395,12 +7595,12 @@ class VisualEngine:
             max_size = 1.0
 
         ax.set_xlabel(
-            str(x_column),
+            sanitize_renderable_text(str(x_column)),
             color=VisualEngine.SECONDARY_TEXT,
             fontsize=17
         )
         ax.set_ylabel(
-            str(y_column),
+            sanitize_renderable_text(str(y_column)),
             color=VisualEngine.SECONDARY_TEXT,
             fontsize=17
         )
@@ -7456,7 +7656,7 @@ class VisualEngine:
                 ax.text(
                     x_values[country],
                     y_values[country],
-                    country,
+                    sanitize_renderable_text(design_system.short_name(country)),
                     color=VisualEngine.TEXT_COLOR,
                     fontsize=14,
                     fontweight="bold",
@@ -7700,7 +7900,7 @@ class VisualEngine:
             country_label = ax.text(
                 -max_abs * 1.20,
                 index,
-                country,
+                sanitize_renderable_text(design_system.short_name(country)),
                 ha="left",
                 va="center",
                 color=VisualEngine.TEXT_COLOR,
@@ -8280,14 +8480,13 @@ class VisualEngine:
 
         layout = fig._lr_layout
 
-        # Centered donut: square axes within the shared chart area so
-        # the ring sits in the middle of the frame, not off to the
-        # left where a right-column legend would run into the rail.
-        ax.set_position([0.285, 0.42, 0.43, 0.22])
+        # Centered, enlarged donut: prominent visual hero occupying the
+        # upper-central region with ample room for the ring and hole.
+        ax.set_position([0.16, 0.41, 0.68, 0.35])
         ax.set_aspect("equal")
         ax.axis("off")
-        ax.set_xlim(-1.22, 1.22)
-        ax.set_ylim(-1.22, 1.22)
+        ax.set_xlim(-1.20, 1.20)
+        ax.set_ylim(-1.20, 1.20)
 
         # -----------------------------------------------------
         # DONUT: one Wedge per entity, laid out clockwise from
@@ -8338,26 +8537,30 @@ class VisualEngine:
         # CENTRE: the leader and its share -- the one number a
         # part-of-whole chart is really about.  Sized to FIT the
         # hole (inner radius 0.6 of a 1.0 donut) so it can never
-        # touch the ring.  Name is NOT truncated -- long names
-        # wrap within the hole's diameter.
+        # touch the ring.  Name is short-formatted so long names
+        # fit cleanly within the hole's diameter.
         # -----------------------------------------------------
+
+        clean_leader = sanitize_renderable_text(design_system.short_name(labels[0]))
+        if len(clean_leader) > 16:
+            clean_leader = clean_leader[:15] + "..."
 
         centre_value = ax.text(
             0.0,
-            0.10,
+            0.12,
             f"{shares[0]:.1f}%",
             ha="center",
             va="center",
             color=VisualEngine.TEXT_COLOR,
-            fontsize=30,
+            fontsize=34,
             fontweight="bold",
             alpha=0.0,
         )
 
         centre_name = ax.text(
             0.0,
-            -0.22,
-            labels[0],
+            -0.18,
+            clean_leader,
             ha="center",
             va="center",
             color=VisualEngine.LEADER_COLOR,
@@ -8368,8 +8571,7 @@ class VisualEngine:
 
         # -----------------------------------------------------
         # YEAR BADGE: placed at the measured header year_y so it
-        # can never collide with a two-line title (the old fixed
-        # y=0.70 sat inside the title block).
+        # can never collide with a two-line title.
         # -----------------------------------------------------
 
         fig.text(
@@ -8384,36 +8586,33 @@ class VisualEngine:
         )
 
         # -----------------------------------------------------
-        # LEGEND (below the chart): measured horizontal rows,
-        # swatch + name + share.  Lists EVERY entity so a thin
-        # slice is never anonymous.  No truncation -- names wrap
-        # to a second line if needed.  Positioned below the
-        # donut, never in the right rail.
+        # LEGEND (below the chart): balanced 2-column layout.
+        # Each column has ~350px of horizontal room, completely
+        # eliminating text-over-percentage collisions while
+        # keeping swatches, names, and shares perfectly aligned.
         # -----------------------------------------------------
 
         legend_artists = []
 
-        # Legend lives below the donut: start a fixed step under
-        # the chart bottom and flow left-to-right, wrapping to a
-        # new row when the rail edge (0.84) is approached.
-        legend_step_x = 0.185
+        col_x = [0.10, 0.52]
+        legend_start_y = 0.34
         legend_step_y = 0.045
-        legend_start_x = 0.16
-        legend_start_y = 0.335
-        rail_right = 0.84
-
-        col = 0
-        row = 0
 
         for index, (label, share) in enumerate(zip(labels, shares)):
 
-            x = legend_start_x + col * legend_step_x
+            clean_name = sanitize_renderable_text(design_system.short_name(label))
+            if len(clean_name) > 15:
+                clean_name = clean_name[:14] + "..."
+
+            col = index % 2
+            row = index // 2
+            x = col_x[col]
             y = legend_start_y - row * legend_step_y
 
             swatch = mpatches.Rectangle(
-                (x, y - 0.010),
-                0.020,
-                0.020,
+                (x, y - 0.009),
+                0.018,
+                0.018,
                 transform=fig.transFigure,
                 facecolor=VisualEngine._get_categorical_color(index),
                 edgecolor="none",
@@ -8425,13 +8624,13 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    x + 0.035,
+                    x + 0.032,
                     y,
-                    label,  # no truncation
+                    clean_name,
                     ha="left",
                     va="center",
                     color=VisualEngine.TEXT_COLOR,
-                    fontsize=15,
+                    fontsize=14,
                     fontweight="bold",
                     alpha=0.0,
                 )
@@ -8439,7 +8638,7 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    min(x + 0.145, rail_right - 0.015),
+                    x + 0.36,
                     y,
                     f"{share:.1f}%",
                     ha="right",
@@ -8450,11 +8649,6 @@ class VisualEngine:
                     alpha=0.0,
                 )
             )
-
-            col += 1
-            if x + legend_step_x > rail_right:
-                col = 0
-                row += 1
 
         def update(frame):
 
@@ -8654,15 +8848,12 @@ class VisualEngine:
         # Centered grid: square axes within the shared chart area so
         # the waffle sits in the middle of the frame, not off to the
         # left where a right-column legend would run into the rail.
-        ax.set_position([0.285, 0.42, 0.43, 0.22])
+        ax.set_position([0.18, 0.41, 0.64, 0.35])
         ax.set_aspect("equal")
         ax.axis("off")
 
         # Cells occupy 0.07 .. 9.93 on both axes; the limits must
-        # CONTAIN that with a margin.  Measured before the fix:
-        # xlim/ylim stopped at 9.3, so the last column and the
-        # top row of the grid were sliced off by the axes clip
-        # (a 10x10 grid rendered as 9x10).
+        # CONTAIN that with a margin.
         ax.set_xlim(-0.1, 10.1)
         ax.set_ylim(-0.1, 10.1)
 
@@ -8710,10 +8901,9 @@ class VisualEngine:
         )
 
         # -----------------------------------------------------
-        # LEGEND (below the chart): measured horizontal rows,
-        # swatch + name + count/share.  Lists every entity plus
-        # "Rest of World".  No truncation -- names wrap if needed.
-        # Positioned below the grid, never in the right rail.
+        # LEGEND (below the chart): balanced 2-column layout.
+        # Swatch + name + count/share cleanly separated with ~350px
+        # of width per column, eliminating text collisions.
         # -----------------------------------------------------
 
         legend_artists = []
@@ -8738,26 +8928,26 @@ class VisualEngine:
                 )
             )
 
-        # Legend flows left-to-right below the grid, wrapping to a
-        # new row when the rail edge (0.84) is approached.
-        legend_step_x = 0.185
+        col_x = [0.10, 0.52]
+        legend_start_y = 0.34
         legend_step_y = 0.045
-        legend_start_x = 0.16
-        legend_start_y = 0.335
-        rail_right = 0.84
-
-        col = 0
-        row = 0
+        max_rows = (len(rows) + 1) // 2
 
         for index, (name, color, count, share) in enumerate(rows):
 
-            x = legend_start_x + col * legend_step_x
+            clean_name = sanitize_renderable_text(design_system.short_name(name))
+            if len(clean_name) > 15:
+                clean_name = clean_name[:14] + "..."
+
+            col = index % 2
+            row = index // 2
+            x = col_x[col]
             y = legend_start_y - row * legend_step_y
 
             swatch = mpatches.Rectangle(
-                (x, y - 0.010),
-                0.020,
-                0.020,
+                (x, y - 0.009),
+                0.018,
+                0.018,
                 transform=fig.transFigure,
                 facecolor=color,
                 edgecolor="none",
@@ -8769,13 +8959,13 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    x + 0.035,
+                    x + 0.032,
                     y,
-                    name,  # no truncation
+                    clean_name,
                     ha="left",
                     va="center",
                     color=VisualEngine.TEXT_COLOR,
-                    fontsize=15,
+                    fontsize=14,
                     fontweight="bold",
                     alpha=0.0,
                 )
@@ -8783,9 +8973,9 @@ class VisualEngine:
 
             legend_artists.append(
                 fig.text(
-                    min(x + 0.145, rail_right - 0.015),
+                    x + 0.36,
                     y,
-                    f"{count} · {share:.1f}%",
+                    f"{count} ({share:.1f}%)",
                     ha="right",
                     va="center",
                     color=VisualEngine.LEADER_COLOR,
@@ -8795,17 +8985,12 @@ class VisualEngine:
                 )
             )
 
-            col += 1
-            if x + legend_step_x > rail_right:
-                col = 0
-                row += 1
-
         # Live box counter: makes the one-box-one-point identity
         # explicit while the grid fills.  Placed below the last
         # legend row.
         counter_y = max(
-            0.26,
-            legend_start_y - (row + 1) * legend_step_y,
+            0.23,
+            legend_start_y - max_rows * legend_step_y - 0.015,
         )
         counter = fig.text(
             0.5,
@@ -8917,6 +9102,33 @@ class VisualEngine:
         output_dir: str,
         audio_duration: float = None
     ):
+        # -----------------------------------------------------
+        # WIDESCREEN / LANDSCAPE DELEGATION (16:9 1920x1080)
+        # -----------------------------------------------------
+        if getattr(settings, "is_landscape", False):
+            from app.visuals.widescreen_duel import WidescreenDuelEngine
+            os.makedirs(output_dir, exist_ok=True)
+            target_file = os.path.join(output_dir, "visual_0.mp4")
+            duration = (
+                float(audio_duration) + VisualEngine.AUDIO_TAIL_HOLD
+                if audio_duration and audio_duration > 0
+                else float(getattr(script, "total_duration", 25.0))
+            )
+            title = getattr(script, "title", "Global Milestone Race")
+            indicator_code = getattr(script, "indicator_code", "")
+            WidescreenDuelEngine.render_landscape_animation(
+                wide_data=data,
+                output_file=target_file,
+                title=title,
+                duration_seconds=duration,
+                indicator_code=indicator_code,
+            )
+            return [
+                {
+                    "scene_number": 1,
+                    "image_path": target_file
+                }
+            ]
 
         # One palette per video: a themed palette when the
         # title/topic matches a keyword group (economy -> gold,

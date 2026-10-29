@@ -63,11 +63,45 @@ def _wrap(text, width=42) -> str:
     return "\n".join(lines)
 
 
+def _chunk_cue(narration: str, start: float, end: float, max_words: int = 5) -> list:
+    """Split a scene narration into punchy 3-5 word dynamic subtitle cues."""
+    words = str(narration or "").strip().split()
+    if not words:
+        return []
+    if len(words) <= max_words:
+        return [(start, end, " ".join(words))]
+
+    chunks = []
+    current = []
+    for w in words:
+        current.append(w)
+        if len(current) >= max_words:
+            chunks.append(" ".join(current))
+            current = []
+    if current:
+        if len(current) <= 2 and chunks:
+            chunks[-1] = chunks[-1] + " " + " ".join(current)
+        else:
+            chunks.append(" ".join(current))
+
+    total_chars = max(1, sum(len(c) for c in chunks))
+    total_time = max(0.1, end - start)
+    cur_t = start
+    result = []
+    for idx, c in enumerate(chunks):
+        c_dur = total_time * (len(c) / total_chars)
+        c_end = cur_t + c_dur if idx < len(chunks) - 1 else end
+        result.append((cur_t, c_end, c))
+        cur_t = c_end
+    return result
+
+
 def generate_srt(
     audio_data,
     output_dir: str,
     filename: str = "captions.srt",
     time_offset: float = 0.0,
+    chunk_cues: bool = True,
 ) -> str | None:
     """Write an SRT file cued to the REAL per-scene audio.
 
@@ -108,7 +142,15 @@ def generate_srt(
         if end <= start:
             continue
 
-        cues.append((start + time_offset, end + time_offset, narration))
+        if chunk_cues:
+            sub_cues = _chunk_cue(
+                narration,
+                start + time_offset,
+                end + time_offset,
+            )
+            cues.extend(sub_cues)
+        else:
+            cues.append((start + time_offset, end + time_offset, narration))
 
     if not cues:
 

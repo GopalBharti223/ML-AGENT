@@ -29,6 +29,7 @@ provider data are never fabricated.
 import random
 from typing import Dict, List, Optional
 
+from app.config import settings
 from app.topic.topic_families import (
     UNSUPPORTED_CATEGORIES,
     family_to_category,
@@ -497,6 +498,31 @@ class CategoryRotationSelector:
         if not eligible_categories:
             return None
 
+        # -------------------------------------------------
+        # STRATEGIC PILLAR FILTERING
+        # Focus rotation on high-retention audience pillars
+        # (Geopolitics & Power, Tech & Disruption) while falling
+        # back gracefully if no pillar category has candidates.
+        # -------------------------------------------------
+        if getattr(settings, "STRATEGIC_PILLARS_ONLY", False):
+            pillar_list = [
+                c.strip().lower()
+                for c in getattr(settings, "PILLAR_CATEGORIES", "").split(",")
+                if c.strip()
+            ]
+            if pillar_list:
+                pillar_eligible = [
+                    cat for cat in eligible_categories
+                    if cat in pillar_list
+                ]
+                if pillar_eligible:
+                    if logger:
+                        logger(
+                            f"[STRATEGIC PILLARS] Focused {len(eligible_categories)} categories "
+                            f"to {len(pillar_eligible)} pillar categories: {pillar_eligible}"
+                        )
+                    eligible_categories = pillar_eligible
+
         # FIX (investigation A6-1, part 2): the window must leave
         # GENUINE GAPS.  With W eligible categories a static window
         # of 5 leaves exactly one score-0 category when W == 6 --
@@ -703,14 +729,27 @@ class CategoryRotationSelector:
             if not selection_pool:
                 selection_pool = pool
 
-        # Randomly select one topic from the category - NOT score.
-        selected = rng.choice(selection_pool)
+        # Transparent weighted selection using existing quality metrics, audience relevance,
+        # and data completeness rather than uniform random choice.
+        weights = []
+        for cand in selection_pool:
+            base_score = max(1.0, float(getattr(cand, "score", 1.0) or 1.0))
+            cand_metrics = getattr(cand, "metrics", {}) or {}
+            aud_score = float(cand_metrics.get("audience_score", 50.0) or 50.0)
+            completeness = float(cand_metrics.get("data_completeness", 0.8) or 0.8)
+            w = base_score * (aud_score / 50.0) * (0.5 + 0.5 * completeness)
+            weights.append(max(0.1, w))
 
-        logger(
-            f"  Selected randomly: \"{selected.topic}\" "
-            f"(provider={selected.provider_id}, "
-            f"indicator={selected.indicator_code})"
-        )
+        selected = rng.choices(selection_pool, weights=weights, k=1)[0]
+        sel_idx = selection_pool.index(selected)
+        sel_pct = (weights[sel_idx] / sum(weights)) * 100.0
+
+        if logger:
+            logger(
+                f"  Selected via transparent quality/audience weighting: \"{selected.topic}\" "
+                f"(provider={selected.provider_id}, indicator={selected.indicator_code}, "
+                f"score={selected.score:.1f}, selection_prob={sel_pct:.1f}%)"
+            )
 
         # Track the selected entity
         cls._track_selected_entity(selected)

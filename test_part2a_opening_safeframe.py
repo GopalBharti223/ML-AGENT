@@ -17,6 +17,7 @@ import app.visuals.scene_engine as se
 
 @pytest.fixture(autouse=True)
 def _no_network_flags(monkeypatch):
+    monkeypatch.setattr(settings, "OPENING_PAYOFF_SECONDS", 2.0)
     monkeypatch.setattr(
         se.VisualEngine, "prefetch_flags",
         classmethod(lambda cls, items: None),

@@ -563,30 +563,28 @@ class TTSEngine:
         return random.choice(candidates)
 
 
-    # Flat, constant delivery is the biggest
-    # "made by a robot" tell there is. We nudge
-    # rate/pitch/volume per scene based on the
-    # pacing hint chosen by the script engine.
+    # Viral Shorts Pacing: Confident, crisp delivery that stops viewers
+    # from swiping away. Never drop below +5% speed (sluggish delivery kills retention).
     PACING_PROFILES = {
         "energetic": {
-            "rate": "+14%",
+            "rate": "+16%",
             "pitch": "+3Hz",
-            "volume": "+0%",
+            "volume": "+2%",
         },
         "intense": {
-            "rate": "+8%",
-            "pitch": "+1Hz",
+            "rate": "+13%",
+            "pitch": "+2Hz",
             "volume": "+4%",
         },
         "steady": {
-            "rate": "+5%",
-            "pitch": "+0Hz",
-            "volume": "+0%",
+            "rate": "+10%",
+            "pitch": "+1Hz",
+            "volume": "+1%",
         },
         "calm": {
-            "rate": "-4%",
-            "pitch": "-1Hz",
-            "volume": "-2%",
+            "rate": "+6%",
+            "pitch": "+0Hz",
+            "volume": "+0%",
         },
     }
 
@@ -799,19 +797,29 @@ class TTSEngine:
             or TTSEngine.PACING_PROFILES["steady"]
         )
 
-        communicate = edge_tts.Communicate(
-            TTSEngine._apply_payoff_pauses(
-                TTSEngine._normalize_spoken_pauses(text)
-            ),
-            selected_voice,
-            rate=speech_settings["rate"],
-            pitch=speech_settings["pitch"],
-            volume=speech_settings["volume"]
-        )
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                communicate = edge_tts.Communicate(
+                    TTSEngine._apply_payoff_pauses(
+                        TTSEngine._normalize_spoken_pauses(text)
+                    ),
+                    selected_voice,
+                    rate=speech_settings["rate"],
+                    pitch=speech_settings["pitch"],
+                    volume=speech_settings["volume"]
+                )
+                await communicate.save(output_path)
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 500:
+                    last_error = None
+                    break
+            except Exception as e:
+                last_error = e
+                if attempt < 3:
+                    await asyncio.sleep(1.2 * attempt)
 
-        await communicate.save(
-            output_path
-        )
+        if last_error:
+            raise last_error
 
         # -------------------------------------------------
         # EDGE TRIMS (trailing + leading)

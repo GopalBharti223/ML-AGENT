@@ -59,12 +59,12 @@ class VideoScript(BaseModel):
 
     total_duration: int = Field(
         ge=10,
-        le=60
+        le=300
     )
 
     scenes: List[ScriptScene] = Field(
-        min_length=4,
-        max_length=5
+        min_length=3,
+        max_length=10
     )
 
     fact_check: FactCheck
@@ -74,6 +74,8 @@ class VideoScript(BaseModel):
     source_url: str
 
     chart_type: Optional[str] = None
+
+    indicator_code: Optional[str] = ""
 
     # Retention feedback loop: hook style chosen at prompt
     # build time (script.py).  Flows into script.json and

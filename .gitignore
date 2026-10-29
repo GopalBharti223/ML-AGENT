@@ -124,5 +124,15 @@ reset_upload_status.py
 # Local simulation output
 sim_output.txt
 
-youtube_token*.json
+youtube_token*
 youtube_auth_backup/
+*.bak
+*.patch
+_backups/
+_beforeafter/
+_capture_out/
+_visual_qa/
+scratch/
+test.mp4
+tts_test.mp3
+_tmp*

@@ -96,6 +96,7 @@ from app.data.providers.solar_system import SolarSystemProvider
 from app.data.providers.usgs import USGSEarthquakeProvider
 from app.data.providers.wikipedia import WikipediaPageviewsProvider
 from app.data.providers.worldbank import WorldBankProvider
+from app.data.providers.viral_topics import ViralTopicsProvider
 
 
 DataProviderRegistry.register(
@@ -167,4 +168,8 @@ DataProviderRegistry.register(
 
 DataProviderRegistry.register(
     RAWGProvider
+)
+
+DataProviderRegistry.register(
+    ViralTopicsProvider
 )
