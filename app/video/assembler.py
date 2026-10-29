@@ -1453,11 +1453,12 @@ class VideoAssembler:
                         "BorderStyle=1,Outline=1.2,Shadow=0.8,Alignment=2,MarginV=38'"
                     )
                 else:
+                    # Vertical shorts: sleek 14pt crisp white subtitles positioned safely below the year counter
                     sub_filter = (
                         f"subtitles='{escaped_sub}':force_style="
-                        "'FontName=Arial,Bold=1,FontSize=20,"
-                        "PrimaryColour=&H0000FFFF,OutlineColour=&H000A0A0A,"
-                        "BorderStyle=1,Outline=2.8,Shadow=1.5,Alignment=2,MarginV=35'"
+                        "'FontName=Arial,Bold=1,FontSize=14,"
+                        "PrimaryColour=&H00FFFFFF,OutlineColour=&H000A0A0A,"
+                        "BorderStyle=1,Outline=1.4,Shadow=0.8,Alignment=2,MarginV=20'"
                     )
                 video_filter += f",{sub_filter}"
                 print("  -> Kinetic on-screen captions burned into video.")
