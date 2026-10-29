@@ -45,6 +45,15 @@ class ViralTopicsProvider(DataProvider):
             for code, info in VIRAL_INDICATORS.items()
         ]
 
+    TOPIC_SYNONYMS: Dict[str, List[str]] = {
+        "programming_languages_race": ["coding", "code", "coder", "programmer", "software", "dev", "developer", "languages"],
+        "tesla_vs_byd_ev_sales": ["electric car", "electric cars", "electric vehicle", "evs", "ev car", "ev auto"],
+        "top_companies_market_cap": ["market value", "biggest company", "most valuable", "trillion dollar", "trillion", "stock market", "nvidia"],
+        "browser_wars_race": ["web browser", "browsers", "internet browser", "first browser war"],
+        "mobile_os_market_share": ["mobile operating system", "phone os", "smartphone os"],
+        "fastest_apps_100m_users": ["100 million", "100m users", "fastest app", "viral app", "adoption speed"],
+    }
+
     @classmethod
     def search_indicators(cls, query: str) -> List[IndicatorInfo]:
         q = str(query or "").strip().lower()
@@ -53,10 +62,17 @@ class ViralTopicsProvider(DataProvider):
 
         matches = []
         for info in cls.list_indicators():
+            code = info.code
+            raw_cfg = VIRAL_INDICATORS.get(code, {})
+            entities = [str(e).lower() for e in raw_cfg.get("data", {}).keys()]
+            synonyms = cls.TOPIC_SYNONYMS.get(code, [])
+
             if (
                 q in info.name.lower()
-                or q in info.code.lower()
+                or q in code.lower()
                 or q in info.category.lower()
+                or any(q in ent or ent in q for ent in entities)
+                or any(q in syn or syn in q for syn in synonyms)
             ):
                 matches.append(info)
         return matches

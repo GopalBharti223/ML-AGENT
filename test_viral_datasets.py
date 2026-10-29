@@ -57,6 +57,15 @@ def test_manual_topic_resolution():
         "smartphones": "smartphone_market_shipments",
         "tiktok": "social_media_active_users",
         "box office": "all_time_box_office",
+        "programming": "programming_languages_race",
+        "python": "programming_languages_race",
+        "browser wars": "browser_wars_race",
+        "mobile os": "mobile_os_market_share",
+        "android": "mobile_os_market_share",
+        "fastest apps": "fastest_apps_100m_users",
+        "electric cars": "tesla_vs_byd_ev_sales",
+        "xiaomi su7": "tesla_vs_byd_ev_sales",
+        "nvidia": "top_companies_market_cap",
     }
     for query, expected_code in test_queries.items():
         matches = ManualTopicEngine.resolve_keyword(query)

@@ -265,6 +265,27 @@ class SmartStoryEngine:
         "corporate_revenues",
         "constructor_standings",
         "driver_standings",
+        # Viral High-Retention Battles, Brand Duels & Pop Culture
+        "programming_languages_race",
+        "browser_wars_race",
+        "mobile_os_market_share",
+        "fastest_apps_100m_users",
+        "ai_models_race",
+        "top_companies_market_cap",
+        "tesla_vs_byd_ev_sales",
+        "youtube_subscribers_race",
+        "streaming_wars_race",
+        "top_billionaires_net_worth",
+        "gta_sales",
+        "all_time_games_sales",
+        "most_played_games_mau",
+        "all_time_gaming_consoles",
+        "smartphone_market_shipments",
+        "social_media_active_users",
+        "football_goals_ronaldo_vs_messi",
+        "cricket_international_runs",
+        "world_population_giants",
+        "all_time_box_office",
     })
     
     # Quality gates for candidate filtering
@@ -358,29 +379,34 @@ class SmartStoryEngine:
         5. Return the highest-scoring valid candidate
         """
 
-        provider_ids = provider_ids or [
-            "worldbank",
-            "owid",
-            "imf",
-            "ai_index",
-            "jolpica_f1",
-            "openalex",
-            "jikan",
-            "nhtsa",
-            "sec_edgar",
-            "solar_system",
-            # Key-gated sources added to automatic rotation
-            # (investigation A2: they were registered and
-            # manual-reachable but never picked randomly).
-            # Both skip cleanly via is_configured() when no
-            # API key is set.
-            "football_data",
-            "rawg",
-            # NOTE: wikipedia is intentionally NOT in automatic
-            # rotation -- it is manual-keyword-only by design
-            # (it needs keyword-resolved entity titles as its
-            # fetch hint and self-skips without one).
-        ]
+        if provider_ids is None:
+            curated_mode = getattr(settings, "TOPIC_SELECTION_MODE", "viral_curated") == "viral_curated"
+            if curated_mode:
+                provider_ids = [
+                    "viral_topics",
+                    "ai_index",
+                    "rawg",
+                    "jikan",
+                    "worldbank",
+                    "owid",
+                    "imf",
+                ]
+            else:
+                provider_ids = [
+                    "viral_topics",
+                    "worldbank",
+                    "owid",
+                    "imf",
+                    "ai_index",
+                    "jolpica_f1",
+                    "openalex",
+                    "jikan",
+                    "nhtsa",
+                    "sec_edgar",
+                    "solar_system",
+                    "football_data",
+                    "rawg",
+                ]
 
         max_indicators_per_provider = (
             max_indicators_per_provider

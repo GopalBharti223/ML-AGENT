@@ -184,43 +184,47 @@ def _print_trending_candidates(candidates: list) -> None:
 
 def prompt_topic_menu() -> str:
     """
-    Two-choice topic menu.
+    Topic menu with Curated Viral Battle as primary default.
 
     Returns:
-        ""      -> choose option 2: Random (automatic selection
-                   runs exactly as it does today)
-        keyword -> choose option 1: user-pinned data topic
+        ""      -> choose option 1: Curated Viral Battle (automatic viral selection)
+        keyword -> choose option 2: user-pinned custom keyword
     """
 
     print("\n" + "=" * 60)
-    print("🎬 TOPIC SELECTION")
+    print("🎬 TOPIC SELECTION (Curated Viral Mode Active)")
     print("=" * 60)
 
-    _print_trending_candidates(
-        _load_trending_candidates()
-    )
-
     print(
-        "  [1] Choose yourself   -> type a data-topic keyword"
+        "  [1] Curated Viral Battle (DEFAULT) -> Maximum Retention & Clickability"
     )
     print(
-        "      e.g. birth rate, gdp, population,"
-        " life expectancy"
+        "      • AI Wars (ChatGPT vs Gemini vs Claude vs Groq)\n"
+        "      • Programming Languages Race (Python vs JS vs Java vs C++ vs Rust)\n"
+        "      • $3 Trillion Market Cap Clash (NVIDIA vs Apple vs Microsoft)\n"
+        "      • Global EV Sales (Tesla vs BYD vs Xiaomi SU7)\n"
+        "      • Browser Wars (Chrome vs IE vs Firefox vs Safari)\n"
+        "      • Mobile OS Wars (Android vs iOS vs Symbian vs BlackBerry)\n"
+        "      • YouTube Race (MrBeast vs T-Series) / Streaming Wars (Netflix vs Disney+)"
     )
     print(
-        "  [2] Random            -> automatic smart selection"
+        "  [2] Custom Keyword   -> type any keyword (e.g. gdp, birth rate, f1)"
+    )
+    print(
+        "  [3] Open Macro Stats -> World Bank / IMF general economic data"
     )
 
     for _attempt in range(3):
 
         choice = input(
-            "Select [1/2] (default 2): "
+            "Select [1/2/3] (default 1 - Curated Viral): "
         ).strip().lower()
 
-        if not choice or choice in ("2", "r", "random"):
+        if not choice or choice in ("1", "v", "viral", "default"):
+            settings.TOPIC_SELECTION_MODE = "viral_curated"
             return ""
 
-        if choice in ("1", "m", "manual"):
+        if choice in ("2", "m", "custom", "keyword", "manual"):
 
             keyword = input(
                 "Topic keyword: "
@@ -235,19 +239,22 @@ def prompt_topic_menu() -> str:
 
             continue
 
+        if choice in ("3", "macro", "open", "random"):
+            settings.TOPIC_SELECTION_MODE = "macro_open"
+            return ""
+
         if choice in ("q", "quit", "exit"):
             raise SystemExit(0)
 
         print(
             f"⚠️ Invalid choice '{choice}'. "
-            "Enter 1 or 2."
+            "Enter 1, 2, or 3."
         )
 
     print(
-        "\nℹ️ Giving up on menu input; "
-        "falling back to Random selection."
+        "\nℹ️ Defaulting to Curated Viral Battle selection."
     )
-
+    settings.TOPIC_SELECTION_MODE = "viral_curated"
     return ""
 
 

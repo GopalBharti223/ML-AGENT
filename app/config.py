@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # -----------------------------------------------------
     VIDEO_FORMAT: str = os.getenv("VIDEO_FORMAT", "shorts").strip().lower()
 
+    # -----------------------------------------------------
+    # TOPIC SELECTION MODE ("viral_curated" vs "macro_open")
+    # Default is "viral_curated" for maximum YouTube retention:
+    # tech wars, gaming franchise sales, brand battles & net worth races.
+    # -----------------------------------------------------
+    TOPIC_SELECTION_MODE: str = os.getenv("TOPIC_SELECTION_MODE", "viral_curated").strip().lower()
+
     @property
     def is_landscape(self) -> bool:
         return self.VIDEO_FORMAT in ("landscape", "widescreen", "horizontal", "long")

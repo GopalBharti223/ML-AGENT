@@ -23,7 +23,13 @@ import matplotlib.patches as patches
 import matplotlib.patheffects as pe
 from matplotlib.animation import FFMpegWriter
 
-from app.visuals.widescreen_duel import VIRAL_LORE_HEADLINES, TOPIC_THEMES, get_topic_theme
+from app.visuals.widescreen_duel import (
+    VIRAL_LORE_HEADLINES,
+    TOPIC_THEMES,
+    get_topic_theme,
+    format_metric_val,
+    format_gap_val,
+)
 
 
 class VerticalDuelEngine:
@@ -77,9 +83,21 @@ class VerticalDuelEngine:
         lore_dict = VIRAL_LORE_HEADLINES.get(indicator_code, {})
         if not lore_dict:
             ent_str = " ".join([str(e).lower() for e in entities])
-            if any(k in ent_str for k in ["mrbeast", "t-series", "pewdiepie"]):
+            if any(k in ent_str for k in ["python", "javascript", "c++", "rust", "java"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("programming_languages_race", {})
+            elif any(k in ent_str for k in ["chrome", "firefox", "internet explorer", "netscape"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("browser_wars_race", {})
+            elif any(k in ent_str for k in ["android", "symbian", "blackberry", "ios"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("mobile_os_market_share", {})
+            elif any(k in ent_str for k in ["threads", "chatgpt", "tiktok", "instagram"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("fastest_apps_100m_users", {})
+            elif any(k in ent_str for k in ["nvidia", "apple", "microsoft", "market cap"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("top_companies_market_cap", {})
+            elif any(k in ent_str for k in ["tesla", "byd", "xiaomi"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("tesla_vs_byd_ev_sales", {})
+            elif any(k in ent_str for k in ["mrbeast", "t-series", "pewdiepie"]):
                 lore_dict = VIRAL_LORE_HEADLINES.get("youtube_subscribers_race", {})
-            elif any(k in ent_str for k in ["chatgpt", "gemini", "claude", "groq"]):
+            elif any(k in ent_str for k in ["gemini", "claude", "groq"]):
                 lore_dict = VIRAL_LORE_HEADLINES.get("ai_models_race", {})
             elif any(k in ent_str for k in ["netflix", "disney"]):
                 lore_dict = VIRAL_LORE_HEADLINES.get("streaming_wars_race", {})
@@ -214,7 +232,7 @@ class VerticalDuelEngine:
                     # Fighter 1 (Leader / Champion) - Left
                     f1_disp = leader_name if len(leader_name) <= 18 else (leader_name[:16] + "..")
                     ax.text(hud_x + 35, hud_y + 110, f1_disp.upper(), fontsize=18, weight="bold", color=theme["hero"], zorder=7)
-                    ax.text(hud_x + 35, hud_y + 60, f"{leader_val:,.1f}", fontsize=28, weight="bold", color="#FFFFFF", zorder=7)
+                    ax.text(hud_x + 35, hud_y + 60, format_metric_val(leader_val, indicator_code), fontsize=28, weight="bold", color="#FFFFFF", zorder=7)
                     ax.text(hud_x + 35, hud_y + 24, "RANK #1 LEADER", fontsize=11.5, weight="bold", color="#34D399", zorder=7)
 
                     # VS Circle Badge - Center
@@ -225,10 +243,11 @@ class VerticalDuelEngine:
                     # Fighter 2 (Contender / Challenger) - Right
                     f2_disp = contender_name if len(contender_name) <= 18 else (contender_name[:16] + "..")
                     ax.text(hud_x + hud_w - 35, hud_y + 110, f2_disp.upper(), fontsize=18, weight="bold", color=theme["rival"], ha="right", zorder=7)
-                    ax.text(hud_x + hud_w - 35, hud_y + 60, f"{contender_val:,.1f}", fontsize=28, weight="bold", color="#FFFFFF", ha="right", zorder=7)
+                    ax.text(hud_x + hud_w - 35, hud_y + 60, format_metric_val(contender_val, indicator_code), fontsize=28, weight="bold", color="#FFFFFF", ha="right", zorder=7)
                     ax.text(hud_x + hud_w - 35, hud_y + 24, "CHALLENGER", fontsize=11.5, weight="bold", color="#FB923C", ha="right", zorder=7)
 
                     # Dynamic Gap Indicator Pill (Floating right below HUD)
+                    gap_fmt = format_gap_val(gap_val, indicator_code)
                     if overtake_flash_frames > 0:
                         gap_box_color = "#EF4444"
                         gap_border_color = "#FFFFFF"
@@ -238,17 +257,17 @@ class VerticalDuelEngine:
                         gap_box_color = "#DC2626"
                         gap_border_color = "#FECACA"
                         gap_text_color = "#FFFFFF"
-                        gap_label = f"GAP: {gap_val:,.1f}M [OVERTAKE THREAT!]"
+                        gap_label = f"GAP: {gap_fmt} [OVERTAKE THREAT!]"
                     elif gap_pct < 0.15:
                         gap_box_color = "#D97706"
                         gap_border_color = "#FEF3C7"
                         gap_text_color = "#000000"
-                        gap_label = f"GAP: {gap_val:,.1f}M [CLOSING BATTLE]"
+                        gap_label = f"GAP: {gap_fmt} [CLOSING BATTLE]"
                     else:
                         gap_box_color = "#1E3A8A"
                         gap_border_color = "#93C5FD"
                         gap_text_color = "#FFFFFF"
-                        gap_label = f"GAP: {gap_val:,.1f}M [CHASING LEADER]"
+                        gap_label = f"GAP: {gap_fmt} [CHASING LEADER]"
 
                     gap_w = 380
                     gap_box = patches.FancyBboxPatch(
@@ -334,12 +353,28 @@ class VerticalDuelEngine:
                     icon_circle = patches.Circle((icon_cx, icon_cy), icon_r, facecolor="#0F172A", edgecolor=edge_c, linewidth=1.2, zorder=5)
                     ax.add_patch(icon_circle)
 
-                    # First letter initial monogram (e.g. C for ChatGPT, G for Gemini)
-                    monogram = name[0].upper() if name else "?"
-                    ax.text(icon_cx, icon_cy, monogram, fontsize=14, weight="bold", color="#FFFFFF", ha="center", va="center", zorder=6)
+                    # Smart initial monogram (e.g. C for ChatGPT, C+ for C++, JS for JavaScript)
+                    if name.startswith("C++"):
+                        monogram = "C+"
+                    elif name.startswith("C#"):
+                        monogram = "C#"
+                    elif name.startswith("JavaScript"):
+                        monogram = "JS"
+                    elif name.startswith("TypeScript"):
+                        monogram = "TS"
+                    elif name.startswith("BYD"):
+                        monogram = "BYD"
+                    elif "Internet Explorer" in name or name.startswith("IE"):
+                        monogram = "IE"
+                    elif name.startswith("iOS"):
+                        monogram = "iOS"
+                    else:
+                        monogram = name[0].upper() if name else "?"
+                    ax.text(icon_cx, icon_cy, monogram, fontsize=12.5 if len(monogram) > 1 else 14,
+                            weight="bold", color="#FFFFFF", ha="center", va="center", zorder=6)
 
                     # Numeric value label
-                    val_str = f"{val:,.1f}M" if val < 1000 else f"{val:,.0f}M"
+                    val_str = format_metric_val(val, indicator_code)
                     ax.text(bar_x + w + 16, y + bar_h / 2, val_str, fontsize=19, weight="bold",
                             color="#FFFFFF" if (is_hero or is_rival) else "#94A3B8", va="center", zorder=5)
 

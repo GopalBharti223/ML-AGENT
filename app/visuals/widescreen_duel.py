@@ -98,10 +98,53 @@ VIRAL_LORE_HEADLINES: Dict[str, Dict[int, str]] = {
         2023: "Historic global milestone: India officially surpasses China in population",
     },
     "tesla_vs_byd_ev_sales": {
-        2019: "Tesla Model 3 volume ramp begins global electric transition",
-        2021: "Tesla delivers nearly 1 Million EVs as Model Y scales globally",
-        2023: "BYD challenges Tesla leadership, surpassing 1.5M annual EV deliveries",
-        2024: "BYD and Tesla battle for the crown of #1 global EV manufacturer",
+        2018: "Tesla Model 3 mass production hell conquered; global EV revolution begins",
+        2021: "Tesla delivers nearly 1 Million EVs as Shanghai Gigafactory reaches full capacity",
+        2023: "China EV surge: BYD delivers 1.57 Million EVs, breathing down Tesla's neck",
+        2024: "Xiaomi enters the arena with SU7 EV; BYD and Tesla trade global quarterly crowns",
+        2026: "BYD crosses 2.2 Million annual EV deliveries, solidifying China's global EV leadership",
+    },
+    "top_companies_market_cap": {
+        2018: "Apple becomes the first public company in history to reach $1 Trillion valuation",
+        2020: "Apple breaches $2 Trillion as tech giants soar during global remote-work era",
+        2022: "Tech valuations recalibrate amidst rising interest rates and inflation",
+        2023: "Generative AI boom begins: NVIDIA datacenter GPU demand ignites historic rally",
+        2024: "Historic milestone: NVIDIA crosses $3.4 Trillion, briefly eclipsing Apple and Microsoft",
+        2026: "The $3.75 Trillion Throne: NVIDIA and Apple battle for the title of world's most valuable company",
+    },
+    "programming_languages_race": {
+        1995: "C and C++ rule enterprise software while Java and JavaScript make their debut",
+        2000: "Java dominates enterprise systems, powering the early web and server applications",
+        2008: "Python begins steady climb in scientific computing and academia",
+        2015: "JavaScript expands beyond the browser with Node.js and modern frontend frameworks",
+        2020: "The AI Revolution ignites Python explosive surge past Java and C++",
+        2024: "Python claims undisputed #1 crown with 35%+ share driven by AI and data science",
+        2026: "Python reigns supreme as global AI standard, while TypeScript and Rust rise rapidly",
+    },
+    "browser_wars_race": {
+        1996: "Netscape Navigator commands 80% of the early World Wide Web",
+        1999: "Microsoft bundles Internet Explorer into Windows, igniting First Browser War",
+        2002: "Internet Explorer hits unprecedented 95% market monopoly",
+        2008: "Google unveils Chrome with blazing V8 engine; Firefox challenges IE dominance",
+        2012: "Historic flip: Google Chrome overtakes Internet Explorer as global #1 browser",
+        2017: "Chrome cements global dominance, crossing 60% share across desktop and mobile",
+        2026: "Chrome reigns with 66% share, while Apple Safari and Microsoft Edge battle for #2",
+    },
+    "mobile_os_market_share": {
+        2006: "Nokia Symbian dominates early smartphones with 67% global market share",
+        2008: "Apple launches App Store for iPhone; Google introduces first commercial Android device",
+        2010: "Android sales explode globally across HTC, Motorola, and Samsung devices",
+        2012: "Android overtakes all legacy platforms, capturing nearly 70% of global smartphone OS",
+        2016: "Duopoly era arrives: Android and iOS wipe out Symbian, BlackBerry, and Windows Phone",
+        2024: "Android holds ~80% global market share, while iOS commands premium high-value users",
+        2026: "Mobile OS Duopoly undisputed: Android leads world volume while Apple leads profits",
+    },
+    "fastest_apps_100m_users": {
+        2015: "Instagram and WhatsApp rewrite consumer adoption speed records",
+        2018: "TikTok explodes worldwide, reaching 100M users in just 9 months",
+        2022: "ChatGPT detonates AI revolution, reaching 100M users in a blistering 60 days",
+        2023: "Meta Threads breaks all human records, crossing 100M signups in just 5 days",
+        2026: "ChatGPT crosses 480 Million users as AI applications become universal utilities",
     },
 }
 
@@ -112,6 +155,30 @@ TOPIC_THEMES = {
         "rival": "#8B5CF6",      # Google Gemini Vivid Violet / Purple
         "accent": "#06B6D4",     # Cyber Cyan Glow
         "hud_border": "#10A37F", # Glowing Emerald HUD
+    },
+    "coding": {
+        "hero": "#38BDF8",       # Python / Developer Cyan Blue
+        "rival": "#FBBF24",      # JavaScript / Java Radiant Gold
+        "accent": "#A855F7",     # Rust / C++ Neon Purple
+        "hud_border": "#38BDF8", # Glowing Dev HUD
+    },
+    "browser": {
+        "hero": "#3B82F6",       # Google Chrome Electric Blue
+        "rival": "#F97316",      # Mozilla Firefox Flame Orange
+        "accent": "#10B981",     # Safari Emerald
+        "hud_border": "#3B82F6", # Browser Glow
+    },
+    "mobile_os": {
+        "hero": "#22C55E",       # Android Cyber Green
+        "rival": "#E2E8F0",       # Apple iOS Titanium Platinum
+        "accent": "#38BDF8",     # Cyan Accent
+        "hud_border": "#22C55E", # Android Neon Glow
+    },
+    "ev": {
+        "hero": "#EF4444",       # Tesla Cyber Red
+        "rival": "#0284C7",      # BYD Electric Blue
+        "accent": "#10B981",     # Xiaomi SU7 Clean Mint
+        "hud_border": "#EF4444", # Turbo Red Border
     },
     "streaming": {
         "hero": "#E50914",       # Iconic Netflix Signature Red
@@ -127,7 +194,7 @@ TOPIC_THEMES = {
     },
     "wealth": {
         "hero": "#FBBF24",       # Luxury Gold
-        "rival": "#10B981",      # Wall Street Emerald Green
+        "rival": "#10B981",      # Wall Street Emerald Green / NVIDIA Green
         "accent": "#D4AF37",
         "hud_border": "#FBBF24",
     },
@@ -157,17 +224,72 @@ def get_topic_theme(indicator_code: str = "", title: str = "") -> Dict[str, str]
     txt = f"{indicator_code} {title}".lower()
     if any(k in txt for k in ["ai", "chatgpt", "gemini", "claude", "groq", "openai", "llama", "deepseek"]):
         return TOPIC_THEMES["ai"]
+    if any(k in txt for k in ["programming", "coding", "python", "javascript", "java", "c++", "rust", "developer"]):
+        return TOPIC_THEMES["coding"]
+    if any(k in txt for k in ["browser", "chrome", "firefox", "safari", "edge", "netscape", "opera"]):
+        return TOPIC_THEMES["browser"]
+    if any(k in txt for k in ["mobile_os", "android", "symbian", "blackberry", "phone os"]):
+        return TOPIC_THEMES["mobile_os"]
+    if any(k in txt for k in ["ev", "electric car", "tesla", "byd", "xiaomi su7", "rivian"]):
+        return TOPIC_THEMES["ev"]
     if any(k in txt for k in ["streaming", "netflix", "disney", "prime_video", "hbo"]):
         return TOPIC_THEMES["streaming"]
     if any(k in txt for k in ["youtube", "subscriber", "mrbeast", "pewdiepie", "t-series"]):
         return TOPIC_THEMES["youtube"]
-    if any(k in txt for k in ["billionaire", "wealth", "net_worth", "market_cap", "company"]):
+    if any(k in txt for k in ["billionaire", "wealth", "net_worth", "market_cap", "company", "trillion", "nvidia"]):
         return TOPIC_THEMES["wealth"]
     if any(k in txt for k in ["game", "gta", "minecraft", "roblox", "console", "playstation", "xbox"]):
         return TOPIC_THEMES["gaming"]
     if any(k in txt for k in ["football", "cricket", "goal", "ronaldo", "messi", "run", "sport"]):
         return TOPIC_THEMES["sports"]
     return TOPIC_THEMES["default"]
+
+
+def format_metric_val(val: float, indicator_code: str = "") -> str:
+    """Format numeric values according to topic unit (Trillions, %, Billions, Millions, or raw count)."""
+    code = (indicator_code or "").lower()
+    if "market_cap" in code or "trillion" in code:
+        return f"${val:.2f}T"
+    if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):
+        return f"{val:.1f}%"
+    if "ev_sales" in code or "deliveries" in code:
+        if val >= 1000:
+            return f"{val/1000:.2f}M"
+        return f"{val:.0f}K"
+    if "net_worth" in code or "billionaire" in code:
+        return f"${val:.1f}B"
+    if "box_office" in code:
+        return f"${val:.2f}B"
+    if "goals" in code or "runs" in code:
+        return f"{val:,.0f}"
+    if "population" in code:
+        if val >= 1000:
+            return f"{val/1000:.2f}B"
+        return f"{val:,.0f}M"
+    # Default for subscribers, copies, users in Millions:
+    if val >= 1000:
+        return f"{val:,.0f}M"
+    return f"{val:,.1f}M" if val < 100 else f"{val:,.0f}M"
+
+
+def format_gap_val(gap_val: float, indicator_code: str = "") -> str:
+    """Format gap difference between leader and rival."""
+    code = (indicator_code or "").lower()
+    if "market_cap" in code or "trillion" in code:
+        return f"${gap_val:.2f}T"
+    if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):
+        return f"{gap_val:.1f}%"
+    if "ev_sales" in code or "deliveries" in code:
+        if gap_val >= 1000:
+            return f"{gap_val/1000:.2f}M"
+        return f"{gap_val:.0f}K"
+    if "net_worth" in code or "billionaire" in code:
+        return f"${gap_val:.1f}B"
+    if "goals" in code or "runs" in code:
+        return f"{gap_val:,.0f}"
+    if gap_val >= 1000:
+        return f"{gap_val:,.0f}M"
+    return f"{gap_val:,.1f}M" if gap_val < 100 else f"{gap_val:,.0f}M"
 
 
 class WidescreenDuelEngine:
@@ -353,7 +475,7 @@ class WidescreenDuelEngine:
 
                     # Fighter 1 (Leader / Champion)
                     ax.text(hud_x + 30, hud_y + 65, leader_name.upper(), fontsize=15, weight="bold", color=theme["hero"], zorder=7)
-                    ax.text(hud_x + 30, hud_y + 32, f"{leader_val:,.1f}", fontsize=15, weight="bold", color="#E2E8F0", zorder=7)
+                    ax.text(hud_x + 30, hud_y + 32, format_metric_val(leader_val, indicator_code), fontsize=15, weight="bold", color="#E2E8F0", zorder=7)
                     ax.text(hud_x + 30, hud_y + 12, "RANK #1 LEADER", fontsize=9.0, weight="bold", color="#34D399", zorder=7)
 
                     # VS Circle
@@ -363,10 +485,11 @@ class WidescreenDuelEngine:
 
                     # Fighter 2 (Contender / Challenger)
                     ax.text(hud_x + hud_w - 30, hud_y + 65, contender_name.upper(), fontsize=15, weight="bold", color=theme["rival"], ha="right", zorder=7)
-                    ax.text(hud_x + hud_w - 30, hud_y + 32, f"{contender_val:,.1f}", fontsize=15, weight="bold", color="#E2E8F0", ha="right", zorder=7)
+                    ax.text(hud_x + hud_w - 30, hud_y + 32, format_metric_val(contender_val, indicator_code), fontsize=15, weight="bold", color="#E2E8F0", ha="right", zorder=7)
                     ax.text(hud_x + hud_w - 30, hud_y + 12, "RANK #2 CONTENDER", fontsize=9.0, weight="bold", color="#FB923C", ha="right", zorder=7)
 
                     # Dynamic Gap Indicator Pill
+                    gap_fmt = format_gap_val(gap_val, indicator_code)
                     if overtake_flash_frames > 0:
                         gap_box_color = "#EF4444"
                         gap_border_color = "#FFFFFF"
@@ -376,17 +499,17 @@ class WidescreenDuelEngine:
                         gap_box_color = "#DC2626"
                         gap_border_color = "#FECACA"
                         gap_text_color = "#FFFFFF"
-                        gap_label = f"GAP: {gap_val:,.1f}M [OVERTAKE THREAT!]"
+                        gap_label = f"GAP: {gap_fmt} [OVERTAKE THREAT!]"
                     elif gap_pct < 0.12:
                         gap_box_color = "#D97706"
                         gap_border_color = "#FEF3C7"
                         gap_text_color = "#000000"
-                        gap_label = f"GAP: {gap_val:,.1f}M [CLOSING BATTLE]"
+                        gap_label = f"GAP: {gap_fmt} [CLOSING BATTLE]"
                     else:
                         gap_box_color = "#1E3A8A"
                         gap_border_color = "#93C5FD"
                         gap_text_color = "#FFFFFF"
-                        gap_label = f"GAP: {gap_val:,.1f}M [CHASING LEADER]"
+                        gap_label = f"GAP: {gap_fmt} [CHASING LEADER]"
 
                     gap_box = patches.FancyBboxPatch(
                         (hud_x + hud_w / 2 - 140, hud_y - 20), 280, 26,
@@ -465,7 +588,7 @@ class WidescreenDuelEngine:
                     ax.add_patch(bar)
 
                     # Numeric value label
-                    val_str = f"{val:,.1f}M" if val < 1000 else f"{val:,.0f}M"
+                    val_str = format_metric_val(val, indicator_code)
                     ax.text(bar_x + w + 18, y + bar_h / 2, val_str, fontsize=17, weight="bold",
                             color="#FFFFFF" if (is_hero or is_rival) else "#94A3B8", va="center", zorder=5)
 
