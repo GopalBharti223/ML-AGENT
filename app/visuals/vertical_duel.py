@@ -457,28 +457,58 @@ class VerticalDuelEngine:
                             path_effects=[pe.withStroke(linewidth=2, foreground="#000000")], zorder=22)
 
                     txt_topic = f"{indicator_code} {title}".lower()
-                    if any(k in txt_topic for k in ["ai", "chatgpt", "gemini", "claude", "groq", "llm"]):
+                    if any(k in txt_topic for k in ["programming", "coding", "language", "python", "developer"]):
+                        unit_str = "% GLOBAL POPULARITY SHARE"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & DEVELOPER WARS"
+                        comm_q = "COMMUNITY: Which language do you code in? Python or C++?"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
+                    elif any(k in txt_topic for k in ["browser", "chrome", "firefox", "safari"]):
+                        unit_str = "% GLOBAL BROWSER SHARE"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & BROWSER WARS"
+                        comm_q = "COMMUNITY: Which browser is your daily driver? Chrome or Brave?"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
+                    elif any(k in txt_topic for k in ["mobile_os", "android", "ios", "smartphone os"]):
+                        unit_str = "% SMARTPHONE OS MARKET SHARE"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & MOBILE OS WARS"
+                        comm_q = "COMMUNITY: Android or iOS? Vote in comments!"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
+                    elif any(k in txt_topic for k in ["market_cap", "trillion", "nvidia", "company"]):
+                        unit_str = "TRILLION DOLLARS"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & MARKET VALUE"
+                        comm_q = "COMMUNITY: Will NVIDIA reach $5 Trillion first? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n${leader_val:.2f} TRILLION"
+                    elif any(k in txt_topic for k in ["ev", "electric car", "tesla", "byd"]):
+                        unit_str = "THOUSAND ANNUAL DELIVERIES"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & EV REVOLUTION"
+                        comm_q = "COMMUNITY: Tesla or BYD? Which EV is the future?"
+                        ev_fmt = f"{leader_val/1000:.2f}M DELIVERIES" if leader_val >= 1000 else f"{leader_val:,.0f}K DELIVERIES"
+                        champ_text = f"{leader_name.upper()}\n{ev_fmt}"
+                    elif any(k in txt_topic for k in ["ai", "chatgpt", "gemini", "claude", "groq", "llm"]):
                         unit_str = "MILLION ACTIVE USERS"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & ARTIFICIAL INTELLIGENCE"
                         comm_q = "COMMUNITY: Which AI model is your daily favorite in 2026? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
                     elif any(k in txt_topic for k in ["billionaire", "wealth", "net_worth"]):
                         unit_str = "BILLION DOLLARS NET WORTH"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & GLOBAL WEALTH"
                         comm_q = "COMMUNITY: Who built the greatest business empire? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n${leader_val:.1f} BILLION NET WORTH"
                     elif any(k in txt_topic for k in ["streaming", "netflix", "disney"]):
                         unit_str = "MILLION SUBSCRIBERS"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & STREAMING WARS"
                         comm_q = "COMMUNITY: Which streaming service is your daily favorite? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
                     elif any(k in txt_topic for k in ["youtube", "subscribers"]):
                         unit_str = "MILLION SUBSCRIBERS"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & YOUTUBE CREATORS"
                         comm_q = "COMMUNITY: Who had the greatest run in internet history? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
                     else:
                         unit_str = "MILLION"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & HISTORIC RACES"
                         comm_q = "COMMUNITY: Who had the greatest run in history? Comment below!"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
 
-                    champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
                     ax.text(540, card_y + 510, champ_text,
                             fontsize=28, weight="bold", color="#FFFFFF", ha="center", va="center",
                             path_effects=[pe.withStroke(linewidth=3, foreground="#000000")], zorder=22)

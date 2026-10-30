@@ -9130,6 +9130,37 @@ class VisualEngine:
                 }
             ]
 
+        # -----------------------------------------------------
+        # VERTICAL / PORTRAIT SHORTS DELEGATION (9:16 1080x1920)
+        # -----------------------------------------------------
+        chart_type_probe = VisualEngine._get_chart_type(script)
+        indicator_probe = getattr(script, "indicator_code", "")
+        if chart_type_probe in ("bar_race", "vertical_duel") or indicator_probe:
+            from app.visuals.vertical_duel import VerticalDuelEngine
+            os.makedirs(output_dir, exist_ok=True)
+            target_file = os.path.join(output_dir, "visual_0.mp4")
+            duration = (
+                float(audio_duration) + VisualEngine.AUDIO_TAIL_HOLD
+                if audio_duration and audio_duration > 0
+                else float(getattr(script, "total_duration", 25.0))
+            )
+            title = getattr(script, "title", "Global Milestone Race")
+            category_label = getattr(script, "category", "VIRAL DATA LABS")
+            VerticalDuelEngine.render_portrait_animation(
+                wide_data=data,
+                output_file=target_file,
+                title=title,
+                category_label=f"LR ATLAS // {category_label.upper()}",
+                duration_seconds=duration,
+                indicator_code=indicator_probe,
+            )
+            return [
+                {
+                    "scene_number": 1,
+                    "image_path": target_file
+                }
+            ]
+
         # One palette per video: a themed palette when the
         # title/topic matches a keyword group (economy -> gold,
         # population -> blue, ...), otherwise the cursor rotates so
