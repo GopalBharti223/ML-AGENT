@@ -52,6 +52,7 @@ class ViralTopicsProvider(DataProvider):
         "browser_wars_race": ["web browser", "browsers", "internet browser", "first browser war"],
         "mobile_os_market_share": ["mobile operating system", "phone os", "smartphone os"],
         "fastest_apps_100m_users": ["100 million", "100m users", "fastest app", "viral app", "adoption speed"],
+        "global_oil_reserves": ["oil", "oil reserves", "crude oil", "petroleum", "crude", "barrels of oil", "oil country", "oil countries", "venezuela oil", "saudi oil"],
     }
 
     @classmethod

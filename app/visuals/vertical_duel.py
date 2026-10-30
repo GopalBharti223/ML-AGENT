@@ -111,6 +111,8 @@ class VerticalDuelEngine:
                 lore_dict = VIRAL_LORE_HEADLINES.get("all_time_gaming_consoles", {})
             elif any(k in ent_str for k in ["india", "china"]):
                 lore_dict = VIRAL_LORE_HEADLINES.get("world_population_giants", {})
+            elif any(k in ent_str for k in ["venezuela", "saudi", "oil", "crude"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("global_oil_reserves", {})
 
         # 5. Initialize Matplotlib figure & FFMpegWriter
         fig = plt.figure(figsize=(10.8, 19.2), dpi=cls.DPI)
@@ -368,6 +370,28 @@ class VerticalDuelEngine:
                         monogram = "IE"
                     elif name.startswith("iOS"):
                         monogram = "iOS"
+                    elif "Saudi" in name:
+                        monogram = "SA"
+                    elif "United Arab" in name or "UAE" in name:
+                        monogram = "UAE"
+                    elif "United States" in name or "USA" in name:
+                        monogram = "USA"
+                    elif "Venezuela" in name:
+                        monogram = "VE"
+                    elif "Canada" in name:
+                        monogram = "CA"
+                    elif "Russia" in name:
+                        monogram = "RU"
+                    elif "Kuwait" in name:
+                        monogram = "KW"
+                    elif "Nigeria" in name:
+                        monogram = "NG"
+                    elif "Libya" in name:
+                        monogram = "LY"
+                    elif "Iran" in name:
+                        monogram = "IR"
+                    elif "Iraq" in name:
+                        monogram = "IQ"
                     else:
                         monogram = name[0].upper() if name else "?"
                     ax.text(icon_cx, icon_cy, monogram, fontsize=12.5 if len(monogram) > 1 else 14,
@@ -457,7 +481,12 @@ class VerticalDuelEngine:
                             path_effects=[pe.withStroke(linewidth=2, foreground="#000000")], zorder=22)
 
                     txt_topic = f"{indicator_code} {title}".lower()
-                    if any(k in txt_topic for k in ["programming", "coding", "language", "python", "developer"]):
+                    if any(k in txt_topic for k in ["oil", "crude", "petroleum", "barrel"]):
+                        unit_str = "BILLION BARRELS OF CRUDE OIL"
+                        tagline = "DAILY HIGH-STAKES DATA BATTLES & GLOBAL ENERGY"
+                        comm_q = "COMMUNITY: Venezuela or Saudi Arabia? Who will control energy in 2030?"
+                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}B BARRELS"
+                    elif any(k in txt_topic for k in ["programming", "coding", "language", "python", "developer"]):
                         unit_str = "% GLOBAL POPULARITY SHARE"
                         tagline = "DAILY HIGH-STAKES DATA BATTLES & DEVELOPER WARS"
                         comm_q = "COMMUNITY: Which language do you code in? Python or C++?"

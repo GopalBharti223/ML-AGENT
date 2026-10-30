@@ -146,10 +146,26 @@ VIRAL_LORE_HEADLINES: Dict[str, Dict[int, str]] = {
         2023: "Meta Threads breaks all human records, crossing 100M signups in just 5 days",
         2026: "ChatGPT crosses 480 Million users as AI applications become universal utilities",
     },
+    "global_oil_reserves": {
+        1990: "Middle East Dominance: Saudi Arabia leads the world with 260 Billion barrels",
+        2000: "Canada certifies Alberta oil sands, catapulting into the global top tier",
+        2005: "Middle East oil powers fuel rapid global industrial and transport expansion",
+        2011: "Historic Overtake: Venezuela certifies Orinoco Belt, dethroning Saudi Arabia as #1",
+        2015: "US Shale Revolution begins unlocking massive new domestic crude formations",
+        2020: "Iran confirms massive Namavaran oil field discovery, crossing 208 Billion barrels",
+        2024: "Venezuela retains crown with 303 Billion barrels, followed closely by Saudi Arabia",
+        2026: "The 300-Billion Barrel Throne: Venezuela & Saudi Arabia control global energy future",
+    },
 }
 
 # Thematic Color Palettes based on topic category
 TOPIC_THEMES = {
+    "oil": {
+        "hero": "#F59E0B",       # Petroleum Amber Gold
+        "rival": "#38BDF8",      # Cyber Sky Blue
+        "accent": "#EAB308",     # Rich Gold
+        "hud_border": "#F59E0B", # Glowing Gold Border
+    },
     "ai": {
         "hero": "#10A37F",       # OpenAI ChatGPT Emerald Green
         "rival": "#8B5CF6",      # Google Gemini Vivid Violet / Purple
@@ -222,6 +238,8 @@ TOPIC_THEMES = {
 def get_topic_theme(indicator_code: str = "", title: str = "") -> Dict[str, str]:
     """Select appropriate high-contrast color scheme for the given topic."""
     txt = f"{indicator_code} {title}".lower()
+    if any(k in txt for k in ["oil", "crude", "petroleum", "barrel", "energy reserves"]):
+        return TOPIC_THEMES["oil"]
     if any(k in txt for k in ["ai", "chatgpt", "gemini", "claude", "groq", "openai", "llama", "deepseek"]):
         return TOPIC_THEMES["ai"]
     if any(k in txt for k in ["programming", "coding", "python", "javascript", "java", "c++", "rust", "developer"]):
@@ -248,6 +266,8 @@ def get_topic_theme(indicator_code: str = "", title: str = "") -> Dict[str, str]
 def format_metric_val(val: float, indicator_code: str = "") -> str:
     """Format numeric values according to topic unit (Trillions, %, Billions, Millions, or raw count)."""
     code = (indicator_code or "").lower()
+    if any(k in code for k in ["oil", "barrel", "petroleum"]):
+        return f"{val:,.1f}B Barrels"
     if "market_cap" in code or "trillion" in code:
         return f"${val:.2f}T"
     if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):
@@ -275,6 +295,8 @@ def format_metric_val(val: float, indicator_code: str = "") -> str:
 def format_gap_val(gap_val: float, indicator_code: str = "") -> str:
     """Format gap difference between leader and rival."""
     code = (indicator_code or "").lower()
+    if any(k in code for k in ["oil", "barrel", "petroleum"]):
+        return f"{gap_val:,.1f}B Barrels"
     if "market_cap" in code or "trillion" in code:
         return f"${gap_val:.2f}T"
     if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):

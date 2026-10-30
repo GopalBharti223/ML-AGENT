@@ -66,6 +66,9 @@ def test_manual_topic_resolution():
         "electric cars": "tesla_vs_byd_ev_sales",
         "xiaomi su7": "tesla_vs_byd_ev_sales",
         "nvidia": "top_companies_market_cap",
+        "oil": "global_oil_reserves",
+        "oil reserves": "global_oil_reserves",
+        "crude oil": "global_oil_reserves",
     }
     for query, expected_code in test_queries.items():
         matches = ManualTopicEngine.resolve_keyword(query)
@@ -80,5 +83,5 @@ def test_end_to_end_topic_generation():
     assert topic_data is not None
     assert topic_data["provider_id"] == "viral_topics"
     assert topic_data["indicator_code"] == "gta_sales"
-    assert topic_data["chart_type"] in ("bar_race", "bar_static", "multi_line", "slope", "area")
+    assert topic_data["chart_type"] in ("bar_race", "bar_static", "multi_line", "slope", "area", "top5_change", "vertical_duel")
     assert len(topic_data["topic"]) > 0
