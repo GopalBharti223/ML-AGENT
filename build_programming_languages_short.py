@@ -110,9 +110,9 @@ scenes = [
         duration=9.0,
         narration=(
             "Today in 2026, Python dominates global software with nearly forty percent share! "
-            "Which programming language do you code in? Comment below and subscribe to LR Atlas!"
+            "Python or C++ in 2030? Vote in the comments, but remember that..."
         ),
-        visual_description="Python crowned undisputed champion with Outro Card",
+        visual_description="Python crowned undisputed champion with live floating debate pill",
         text_overlay="2026: The Undisputed King of Code",
         chart_type="vertical_duel",
         scene_purpose="RESOLUTION",

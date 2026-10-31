@@ -112,10 +112,10 @@ scenes = [
         scene_number=4,
         duration=9.0,
         narration=(
-            "Today, Venezuela reigns as the undisputed King of Oil with three hundred and four billion barrels! "
-            "Who truly controls the future of energy? Comment below and subscribe to LR Atlas!"
+            "Today, Venezuela reigns supreme with three hundred and four billion barrels! "
+            "Who will control global energy in 2030? Vote in the comments, because whenever you ask..."
         ),
-        visual_description="Venezuela crowned champion with Outro Card",
+        visual_description="Venezuela crowned champion with live floating debate pill",
         text_overlay="2026: The Undisputed King of Oil",
         chart_type="vertical_duel",
         scene_purpose="RESOLUTION",

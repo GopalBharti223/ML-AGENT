@@ -11,9 +11,9 @@ from app.config import settings
 settings.VIDEO_FORMAT = "portrait"
 from app.youtube.uploader import upload_video
 
-video_path = r"output\oil_reserves_short\20261031_002850\final_video.mp4"
-metadata_path = r"output\oil_reserves_short\20261031_002850\youtube_metadata.json"
-thumb_path = r"output\oil_reserves_short\20261031_002850\thumbnails\short_preview_2011_venezuela_overtake.jpg"
+video_path = r"output\oil_reserves_short\20261031_125823\final_video.mp4"
+metadata_path = r"output\oil_reserves_short\20261031_125823\youtube_metadata.json"
+thumb_path = r"output\oil_reserves_short\20261031_125823\thumbnails\short_preview_2011_venezuela_overtake.jpg"
 
 with open(metadata_path, "r", encoding="utf-8") as f:
     metadata = json.load(f)

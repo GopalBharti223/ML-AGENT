@@ -140,8 +140,8 @@ class VerticalDuelEngine:
         bar_x = 330        # +45px safe margin on left for long names
         bar_max_w = 530    # Keeps bars completely clear of YouTube Shorts action buttons (x > 880)
 
-        # Outro configuration
-        outro_duration_s = 3.8
+        # Outro configuration (Shorts Native: fast 2.4s floating debate pill, no static screen-hiding card)
+        outro_duration_s = 2.4
         outro_start_frame = max(0, total_frames - int(outro_duration_s * fps))
 
         print(f"  [SHORTS DUEL] Rendering (1080x1920) Vertical Animation: {total_frames} frames ({duration_seconds:.1f}s) ...")
@@ -235,7 +235,9 @@ class VerticalDuelEngine:
                     f1_disp = leader_name if len(leader_name) <= 18 else (leader_name[:16] + "..")
                     ax.text(hud_x + 35, hud_y + 110, f1_disp.upper(), fontsize=18, weight="bold", color=theme["hero"], zorder=7)
                     ax.text(hud_x + 35, hud_y + 60, format_metric_val(leader_val, indicator_code), fontsize=28, weight="bold", color="#FFFFFF", zorder=7)
-                    ax.text(hud_x + 35, hud_y + 24, "RANK #1 LEADER", fontsize=11.5, weight="bold", color="#34D399", zorder=7)
+                    rank_label = "★ ALL-TIME WINNER ★" if (f >= outro_start_frame) else "RANK #1 LEADER"
+                    rank_color = "#FBBF24" if (f >= outro_start_frame) else "#34D399"
+                    ax.text(hud_x + 35, hud_y + 24, rank_label, fontsize=11.5, weight="bold", color=rank_color, zorder=7)
 
                     # VS Circle Badge - Center
                     vs_circle = patches.Circle((hud_x + hud_w / 2, hud_y + 78), 34, facecolor="#1E293B", edgecolor="#D4AF37", linewidth=2.4, zorder=7)
@@ -404,13 +406,20 @@ class VerticalDuelEngine:
 
                     # Leader / Challenger Badge
                     if is_hero:
+                        is_final_champ = (f >= outro_start_frame)
+                        badge_label = "★ WINNER" if is_final_champ else "★ #1 LEADER"
+                        badge_w = 125
                         badge_bg = patches.FancyBboxPatch(
-                            (bar_x + w + 115, y + bar_h / 2 - 14), 125, 28,
+                            (bar_x + w + 115, y + bar_h / 2 - 14), badge_w, 28,
                             boxstyle="round,pad=0,rounding_size=6",
-                            facecolor="#D4AF37", edgecolor="none", alpha=0.95, zorder=5
+                            facecolor="#FBBF24" if is_final_champ else "#D4AF37",
+                            edgecolor="#FFFFFF" if is_final_champ else "none",
+                            linewidth=1.2 if is_final_champ else 0,
+                            alpha=0.98, zorder=5
                         )
                         ax.add_patch(badge_bg)
-                        ax.text(bar_x + w + 177, y + bar_h / 2, "★ #1 LEADER", fontsize=10.0, weight="bold",
+                        ax.text(bar_x + w + 115 + badge_w / 2, y + bar_h / 2, badge_label,
+                                fontsize=10.0, weight="bold",
                                 color="#000000", ha="center", va="center", zorder=6)
                     elif is_rival:
                         badge_bg = patches.FancyBboxPatch(
@@ -425,7 +434,7 @@ class VerticalDuelEngine:
                 # -------------------------------------------------
                 # 5. Historic Lore / News Ticker (Lower Mid)
                 # -------------------------------------------------
-                if current_lore_text:
+                if current_lore_text and f < outro_start_frame:
                     lore_w, lore_h = 980, 85
                     lore_x, lore_y = (cls.CANVAS_WIDTH - lore_w) / 2, 510
 
@@ -455,113 +464,52 @@ class VerticalDuelEngine:
                         ha="center", va="bottom", fontfamily="sans-serif", zorder=6)
 
                 # -------------------------------------------------
-                # 7. Cinematic Outro Card (Last 3.8s)
+                # 7. Sleek Interactive Debate Pill (Last 2.0s - High Retention)
                 # -------------------------------------------------
                 if f >= outro_start_frame:
-                    outro_prog = min(1.0, (f - outro_start_frame) / (fps * 0.7))
-                    dim_mask = patches.Rectangle(
-                        (0, 0), cls.CANVAS_WIDTH, cls.CANVAS_HEIGHT,
-                        facecolor="#050811", alpha=0.90 * outro_prog, zorder=20
-                    )
-                    ax.add_patch(dim_mask)
-
-                    card_w, card_h = 980, 720
-                    card_x, card_y = (cls.CANVAS_WIDTH - card_w) / 2, 600
-                    outro_card = patches.FancyBboxPatch(
-                        (card_x, card_y), card_w, card_h,
-                        boxstyle="round,pad=0,rounding_size=26",
-                        facecolor="#0B132B", edgecolor=theme.get("accent", "#38BDF8"), linewidth=3.2,
-                        alpha=0.97 * outro_prog, zorder=21
-                    )
-                    ax.add_patch(outro_card)
-
-                    # Champion announcement
-                    ax.text(540, card_y + 630, "★ ALL-TIME CHAMPION ★",
-                            fontsize=24, weight="bold", color="#FBBF24", ha="center", va="center",
-                            path_effects=[pe.withStroke(linewidth=2, foreground="#000000")], zorder=22)
+                    outro_prog = min(1.0, (f - outro_start_frame) / (fps * 0.4))
+                    pill_w, pill_h = 980, 82
+                    pill_x, pill_y = (cls.CANVAS_WIDTH - pill_w) / 2, 510
 
                     txt_topic = f"{indicator_code} {title}".lower()
                     if any(k in txt_topic for k in ["oil", "crude", "petroleum", "barrel"]):
-                        unit_str = "BILLION BARRELS OF CRUDE OIL"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & GLOBAL ENERGY"
-                        comm_q = "COMMUNITY: Venezuela or Saudi Arabia? Who will control energy in 2030?"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}B BARRELS"
-                    elif any(k in txt_topic for k in ["programming", "coding", "language", "python", "developer"]):
-                        unit_str = "% GLOBAL POPULARITY SHARE"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & DEVELOPER WARS"
-                        comm_q = "COMMUNITY: Which language do you code in? Python or C++?"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
-                    elif any(k in txt_topic for k in ["browser", "chrome", "firefox", "safari"]):
-                        unit_str = "% GLOBAL BROWSER SHARE"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & BROWSER WARS"
-                        comm_q = "COMMUNITY: Which browser is your daily driver? Chrome or Brave?"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
-                    elif any(k in txt_topic for k in ["mobile_os", "android", "ios", "smartphone os"]):
-                        unit_str = "% SMARTPHONE OS MARKET SHARE"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & MOBILE OS WARS"
-                        comm_q = "COMMUNITY: Android or iOS? Vote in comments!"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:.1f}% SHARE"
-                    elif any(k in txt_topic for k in ["market_cap", "trillion", "nvidia", "company"]):
-                        unit_str = "TRILLION DOLLARS"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & MARKET VALUE"
-                        comm_q = "COMMUNITY: Will NVIDIA reach $5 Trillion first? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n${leader_val:.2f} TRILLION"
+                        debate_call = "★ WHO CONTROLS ENERGY IN 2030? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME KING OF OIL: {leader_name.upper()} ({leader_val:.1f}B BARRELS)"
+                    elif any(k in txt_topic for k in ["programming", "coding", "language", "python"]):
+                        debate_call = "★ PYTHON OR C++ IN 2030? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()} ({leader_val:.1f}% SHARE)"
+                    elif any(k in txt_topic for k in ["browser", "chrome", "firefox"]):
+                        debate_call = "★ CAN ANY BROWSER BEAT CHROME? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()} ({leader_val:.1f}% SHARE)"
+                    elif any(k in txt_topic for k in ["mobile_os", "android", "ios"]):
+                        debate_call = "★ ANDROID OR iOS? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()} ({leader_val:.1f}% SHARE)"
+                    elif any(k in txt_topic for k in ["market_cap", "trillion", "nvidia"]):
+                        debate_call = "★ WILL NVIDIA REACH $5 TRILLION FIRST? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()} (${leader_val:.2f}T)"
                     elif any(k in txt_topic for k in ["ev", "electric car", "tesla", "byd"]):
-                        unit_str = "THOUSAND ANNUAL DELIVERIES"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & EV REVOLUTION"
-                        comm_q = "COMMUNITY: Tesla or BYD? Which EV is the future?"
-                        ev_fmt = f"{leader_val/1000:.2f}M DELIVERIES" if leader_val >= 1000 else f"{leader_val:,.0f}K DELIVERIES"
-                        champ_text = f"{leader_name.upper()}\n{ev_fmt}"
-                    elif any(k in txt_topic for k in ["ai", "chatgpt", "gemini", "claude", "groq", "llm"]):
-                        unit_str = "MILLION ACTIVE USERS"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & ARTIFICIAL INTELLIGENCE"
-                        comm_q = "COMMUNITY: Which AI model is your daily favorite in 2026? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
-                    elif any(k in txt_topic for k in ["billionaire", "wealth", "net_worth"]):
-                        unit_str = "BILLION DOLLARS NET WORTH"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & GLOBAL WEALTH"
-                        comm_q = "COMMUNITY: Who built the greatest business empire? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n${leader_val:.1f} BILLION NET WORTH"
-                    elif any(k in txt_topic for k in ["streaming", "netflix", "disney"]):
-                        unit_str = "MILLION SUBSCRIBERS"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & STREAMING WARS"
-                        comm_q = "COMMUNITY: Which streaming service is your daily favorite? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
-                    elif any(k in txt_topic for k in ["youtube", "subscribers"]):
-                        unit_str = "MILLION SUBSCRIBERS"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & YOUTUBE CREATORS"
-                        comm_q = "COMMUNITY: Who had the greatest run in internet history? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
+                        debate_call = "★ TESLA OR BYD? WHO WINS THE FUTURE? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()}"
                     else:
-                        unit_str = "MILLION"
-                        tagline = "DAILY HIGH-STAKES DATA BATTLES & HISTORIC RACES"
-                        comm_q = "COMMUNITY: Who had the greatest run in history? Comment below!"
-                        champ_text = f"{leader_name.upper()}\n{leader_val:,.1f} {unit_str}"
+                        debate_call = "★ WHO WINS THE NEXT DECADE? VOTE IN COMMENTS ★"
+                        debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()}"
 
-                    ax.text(540, card_y + 510, champ_text,
-                            fontsize=28, weight="bold", color="#FFFFFF", ha="center", va="center",
-                            path_effects=[pe.withStroke(linewidth=3, foreground="#000000")], zorder=22)
+                    # Glowing sleek debate pill (smoothly takes lore ticker space without hiding bars)
+                    pill_bg = patches.FancyBboxPatch(
+                        (pill_x, pill_y), pill_w, pill_h,
+                        boxstyle="round,pad=0,rounding_size=16",
+                        facecolor="#0B132B", edgecolor="#FBBF24", linewidth=2.4,
+                        alpha=0.98 * outro_prog, zorder=12
+                    )
+                    ax.add_patch(pill_bg)
 
-                    # Separator line
-                    ax.plot([card_x + 60, card_x + card_w - 60], [card_y + 400, card_y + 400],
-                            color=theme["hero"], linewidth=2.4, alpha=0.75 * outro_prog, zorder=22)
+                    ax.text(540, pill_y + 50, debate_call,
+                            fontsize=16.5, weight="bold", color="#FBBF24", ha="center", va="center",
+                            path_effects=[pe.withStroke(linewidth=3, foreground="#000000")], zorder=13)
 
-                    # Channel Subscribe CTA
-                    ax.text(540, card_y + 320, "★ SUBSCRIBE TO LR ATLAS ★",
-                            fontsize=28, weight="bold", color="#F43F5E", ha="center", va="center",
-                            path_effects=[pe.withStroke(linewidth=3, foreground="#000000")], zorder=22)
-
-                    ax.text(540, card_y + 245, tagline,
-                            fontsize=14.5, weight="bold", color="#94A3B8", ha="center", va="center", zorder=22)
-
-                    # Viewer Engagement Question
-                    clean_comm_q = comm_q if len(comm_q) <= 48 else (comm_q[:46] + "..")
-                    ax.text(540, card_y + 160, clean_comm_q,
-                            fontsize=16.5, weight="bold", color="#E2E8F0", ha="center", va="center", zorder=22)
-
-                    # Gratitude / Like & Share
-                    ax.text(540, card_y + 75, "LIKE & SHARE  //  THANK YOU FOR WATCHING",
-                            fontsize=16, weight="bold", color=theme["hero"], ha="center", va="center", zorder=22)
+                    ax.text(540, pill_y + 22, debate_sub,
+                            fontsize=13.0, weight="bold", color="#E2E8F0", ha="center", va="center",
+                            path_effects=[pe.withStroke(linewidth=2, foreground="#000000")], zorder=13)
 
                 # Grab frame
                 writer.grab_frame()
