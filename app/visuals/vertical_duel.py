@@ -372,6 +372,22 @@ class VerticalDuelEngine:
                         monogram = "IE"
                     elif name.startswith("iOS"):
                         monogram = "iOS"
+                    elif "NVIDIA" in name:
+                        monogram = "NVDA"
+                    elif "Apple" in name:
+                        monogram = "AAPL"
+                    elif "Microsoft" in name:
+                        monogram = "MSFT"
+                    elif "Alphabet" in name or "Google" in name:
+                        monogram = "GOOG"
+                    elif "Amazon" in name:
+                        monogram = "AMZN"
+                    elif "Meta" in name:
+                        monogram = "META"
+                    elif "TSMC" in name:
+                        monogram = "TSMC"
+                    elif "Aramco" in name:
+                        monogram = "ARMCO"
                     elif "Saudi" in name:
                         monogram = "SA"
                     elif "United Arab" in name or "UAE" in name:

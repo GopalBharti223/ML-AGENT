@@ -304,7 +304,8 @@ class YouTubeUploader:
         tags=None,
         category_id="27",
         privacy_status="private",
-        thumbnail_path=None
+        thumbnail_path=None,
+        publish_at=None,
     ):
 
         video_path = Path(
@@ -392,8 +393,9 @@ class YouTubeUploader:
             },
 
             "status": {
-                "privacyStatus": privacy_status,
-                "selfDeclaredMadeForKids": False
+                "privacyStatus": "private" if publish_at else privacy_status,
+                "selfDeclaredMadeForKids": False,
+                **({"publishAt": str(publish_at)} if publish_at else {})
             }
         }
 
@@ -599,7 +601,8 @@ def upload_video(
     # Delayed-publish default: videos go up UNLISTED and are
     # flipped to PUBLIC by publish_worker.py after
     # DELAYED_PUBLISH_DELAY_MINUTES (see README).
-    privacy_status="unlisted"
+    privacy_status="unlisted",
+    publish_at=None,
 ):
 
     youtube = (
@@ -736,7 +739,8 @@ def upload_video(
             tags=tags,
             category_id=category_id,
             privacy_status=privacy_status,
-            thumbnail_path=thumbnail_path
+            thumbnail_path=thumbnail_path,
+            publish_at=publish_at,
         )
     )
 
