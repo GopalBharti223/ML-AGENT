@@ -1309,6 +1309,80 @@ class VideoAssembler:
                 f"using unbranded video."
             )
 
+        # -------------------------------------------------
+        # SHORTS RETENTION SFX (Hook Impact & Overtakes)
+        # -------------------------------------------------
+        if not getattr(settings, "is_landscape", False):
+            try:
+                from app.video.sfx import (
+                    synthesize_impact_boom,
+                    synthesize_whoosh,
+                    synthesize_cash_bell,
+                )
+                boom_path = synthesize_impact_boom()
+                whoosh_path = synthesize_whoosh()
+                bell_path = synthesize_cash_bell()
+
+                overtake_file = os.path.join(output_dir, "visuals", "overtake_events.json")
+                if not os.path.exists(overtake_file):
+                    overtake_file = os.path.join(output_dir, "overtake_events.json")
+
+                overtake_times = []
+                if os.path.exists(overtake_file):
+                    try:
+                        with open(overtake_file, "r", encoding="utf-8") as f_ov:
+                            ov_data = json.load(f_ov)
+                            overtake_times = [float(item.get("time", 0.0)) for item in ov_data if float(item.get("time", 0.0)) > 1.2]
+                    except Exception:
+                        pass
+
+                sfx_inputs = ["-i", full_audio_path]
+                filter_parts = ["[0:a]volume=1.0[a_base]"]
+                mix_inputs = ["[a_base]"]
+                in_idx = 1
+
+                # 1. Hook Impact Boom at t=0.0s (syncs with 0.8s hook curiosity shock)
+                if boom_path and os.path.isfile(str(boom_path)):
+                    sfx_inputs.extend(["-i", str(boom_path)])
+                    filter_parts.append(f"[{in_idx}:a]adelay=0|0,volume=0.82[a_boom]")
+                    mix_inputs.append("[a_boom]")
+                    in_idx += 1
+
+                # 2. Overtake swooshes and dings at overtakes (capped to max 4 to prevent clutter)
+                for ot in overtake_times[:4]:
+                    ms = int(ot * 1000)
+                    if whoosh_path and os.path.isfile(str(whoosh_path)):
+                        sfx_inputs.extend(["-i", str(whoosh_path)])
+                        filter_parts.append(f"[{in_idx}:a]adelay={ms}|{ms},volume=0.72[a_wh_{in_idx}]")
+                        mix_inputs.append(f"[a_wh_{in_idx}]")
+                        in_idx += 1
+                    if bell_path and os.path.isfile(str(bell_path)):
+                        sfx_inputs.extend(["-i", str(bell_path)])
+                        filter_parts.append(f"[{in_idx}:a]adelay={ms+120}|{ms+120},volume=0.60[a_bl_{in_idx}]")
+                        mix_inputs.append(f"[a_bl_{in_idx}]")
+                        in_idx += 1
+
+                if in_idx > 1:
+                    sfx_out = os.path.join(output_dir, "sfx_enhanced_audio.mp3")
+                    mix_tag = "".join(mix_inputs)
+                    filter_str = ";".join(filter_parts) + f";{mix_tag}amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=0[a_final]"
+                    sfx_cmd = [
+                        "ffmpeg", "-y",
+                        *sfx_inputs,
+                        "-filter_complex", filter_str,
+                        "-map", "[a_final]",
+                        "-ar", "24000",
+                        "-c:a", "libmp3lame",
+                        "-b:a", "192k",
+                        sfx_out
+                    ]
+                    sfx_res = subprocess.run(sfx_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if sfx_res.returncode == 0:
+                        full_audio_path = sfx_out
+                        print(f"  -> Dynamic Shorts SFX injected: Hook Boom + {len(overtake_times[:4])} Overtake impacts.")
+            except Exception as sfx_inject_err:
+                print(f"  -> Shorts SFX overlay skipped ({sfx_inject_err}); using standard narration.")
+
         # =================================================
         # 4. GET REAL MEDIA DURATIONS
         # =================================================
@@ -1431,8 +1505,11 @@ class VideoAssembler:
             getattr(_cfg, "BURN_CAPTIONS", True)
         )
         if captions_path is None:
+            candidate_ass = os.path.join(output_dir, "captions.ass")
             candidate_srt = os.path.join(output_dir, "captions.srt")
-            if os.path.isfile(candidate_srt):
+            if os.path.isfile(candidate_ass):
+                captions_path = candidate_ass
+            elif os.path.isfile(candidate_srt):
                 captions_path = candidate_srt
 
         if burn_captions and captions_path and os.path.isfile(captions_path):
@@ -1442,10 +1519,11 @@ class VideoAssembler:
                     .replace("\\", "/")
                     .replace(":", "\\:")
                 )
-                # Subtitle styling:
-                # Landscape uses sleek 13pt crisp white documentary captions (&H00FFFFFF) with subtle outline.
-                # Vertical shorts retain large 20pt golden-yellow captions.
-                if getattr(_settings, "is_landscape", False):
+                if str(captions_path).lower().endswith(".ass"):
+                    # ASS subtitles contain embedded styling & word-by-word kinetic highlight tags
+                    sub_filter = f"subtitles='{escaped_sub}'"
+                elif getattr(_settings, "is_landscape", False):
+                    # Landscape uses sleek 13pt crisp white documentary captions (&H00FFFFFF) with subtle outline.
                     sub_filter = (
                         f"subtitles='{escaped_sub}':force_style="
                         "'FontName=Arial,Bold=1,FontSize=13,"

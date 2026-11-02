@@ -51,6 +51,7 @@ class VerticalDuelEngine:
         duration_seconds: float = 35.0,
         fps: int = 30,
         indicator_code: str = "",
+        hook_question: str = None,
     ) -> str:
         """Renders complete 1080x1920 MP4 vertical animation for YouTube Shorts."""
         os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
@@ -113,6 +114,8 @@ class VerticalDuelEngine:
                 lore_dict = VIRAL_LORE_HEADLINES.get("world_population_giants", {})
             elif any(k in ent_str for k in ["venezuela", "saudi", "oil", "crude"]):
                 lore_dict = VIRAL_LORE_HEADLINES.get("global_oil_reserves", {})
+            elif any(k in ent_str for k in ["economy", "gdp", "united kingdom", "india", "japan", "germany"]):
+                lore_dict = VIRAL_LORE_HEADLINES.get("top_world_economies_gdp", {})
 
         # 5. Initialize Matplotlib figure & FFMpegWriter
         fig = plt.figure(figsize=(10.8, 19.2), dpi=cls.DPI)
@@ -129,6 +132,7 @@ class VerticalDuelEngine:
 
         prev_leader = None
         overtake_flash_frames = 0
+        overtake_events = []
         current_lore_text = ""
         current_lore_year = 0
 
@@ -175,6 +179,12 @@ class VerticalDuelEngine:
                 # Detect overtake
                 if prev_leader is not None and leader_name != prev_leader:
                     overtake_flash_frames = 18
+                    overtake_events.append({
+                        "time": round(float(f) / fps, 2),
+                        "frame": f,
+                        "new_leader": str(leader_name),
+                        "prev_leader": str(prev_leader),
+                    })
                 prev_leader = leader_name
 
                 if overtake_flash_frames > 0:
@@ -291,6 +301,9 @@ class VerticalDuelEngine:
                     y = bar_start_y - (i * bar_spacing)
                     w = (val / max_val) * bar_max_w
                     w = max(68.0, w)
+                    if f < int(fps * 0.45):
+                        entry_scale = min(1.0, 0.35 + 0.65 * (f / max(1, int(fps * 0.45))))
+                        w = max(24.0, w * entry_scale)
 
                     is_hero = (i == 0)
                     is_rival = (i == 1)
@@ -402,6 +415,20 @@ class VerticalDuelEngine:
                         monogram = "RU"
                     elif "Kuwait" in name:
                         monogram = "KW"
+                    elif "India" in name:
+                        monogram = "IND"
+                    elif "China" in name:
+                        monogram = "CHN"
+                    elif "United Kingdom" in name or "UK" in name:
+                        monogram = "UK"
+                    elif "Germany" in name:
+                        monogram = "GER"
+                    elif "Japan" in name:
+                        monogram = "JPN"
+                    elif "France" in name:
+                        monogram = "FRA"
+                    elif "Italy" in name:
+                        monogram = "ITA"
                     elif "Nigeria" in name:
                         monogram = "NG"
                     elif "Libya" in name:
@@ -466,6 +493,7 @@ class VerticalDuelEngine:
                             fontsize=11.5, weight="bold", color="#D4AF37", zorder=7)
 
                     clean_lore = current_lore_text if len(current_lore_text) <= 68 else (current_lore_text[:65] + "...")
+                    clean_lore = clean_lore.replace("$", r"\$")
                     ax.text(lore_x + 24, lore_y + 24, clean_lore,
                             fontsize=14.5, weight="medium", color="#F1F5F9", zorder=7)
 
@@ -503,6 +531,9 @@ class VerticalDuelEngine:
                     elif any(k in txt_topic for k in ["market_cap", "trillion", "nvidia"]):
                         debate_call = "★ WILL NVIDIA REACH $5 TRILLION FIRST? VOTE IN COMMENTS ★"
                         debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()} (${leader_val:.2f}T)"
+                    elif any(k in txt_topic for k in ["economy", "gdp", "india", "uk"]):
+                        debate_call = "★ WILL INDIA BECOME #3 BY 2028? VOTE IN COMMENTS ★"
+                        debate_sub = f"WORLD LEADER: {leader_name.upper()} (${leader_val:.1f}T) // INDIA #5"
                     elif any(k in txt_topic for k in ["ev", "electric car", "tesla", "byd"]):
                         debate_call = "★ TESLA OR BYD? WHO WINS THE FUTURE? VOTE IN COMMENTS ★"
                         debate_sub = f"ALL-TIME CHAMPION: {leader_name.upper()}"
@@ -519,17 +550,69 @@ class VerticalDuelEngine:
                     )
                     ax.add_patch(pill_bg)
 
-                    ax.text(540, pill_y + 50, debate_call,
+                    debate_call_esc = debate_call.replace("$", r"\$")
+                    debate_sub_esc = debate_sub.replace("$", r"\$")
+
+                    ax.text(540, pill_y + 50, debate_call_esc,
                             fontsize=16.5, weight="bold", color="#FBBF24", ha="center", va="center",
                             path_effects=[pe.withStroke(linewidth=3, foreground="#000000")], zorder=13)
 
-                    ax.text(540, pill_y + 22, debate_sub,
+                    ax.text(540, pill_y + 22, debate_sub_esc,
                             fontsize=13.0, weight="bold", color="#E2E8F0", ha="center", va="center",
                             path_effects=[pe.withStroke(linewidth=2, foreground="#000000")], zorder=13)
+
+                # -------------------------------------------------
+                # 8. ⚡ 0.8s HOOK SHOCK (Frame 0 Curiosity Trigger)
+                # -------------------------------------------------
+                hook_dur_frames = int(fps * 1.1)
+                if f < hook_dur_frames:
+                    fade_start = int(fps * 0.7)
+                    if f < fade_start:
+                        shock_alpha = 0.98
+                    else:
+                        shock_alpha = max(0.0, 0.98 * (1.0 - (f - fade_start) / max(1, hook_dur_frames - fade_start)))
+
+                    resolved_hook = hook_question
+                    if not resolved_hook:
+                        clean_t = title.replace("#Shorts", "").replace("#shorts", "").strip()
+                        resolved_hook = f"CAN ANYONE STOP {leader_name.upper()}?" if leader_name else f"WHO WINS {clean_t.upper()}?"
+
+                    if shock_alpha > 0.05:
+                        card_w, card_h = 980, 240
+                        card_x, card_y = (cls.CANVAS_WIDTH - card_w) / 2, 920
+
+                        shock_bg = patches.FancyBboxPatch(
+                            (card_x, card_y), card_w, card_h,
+                            boxstyle="round,pad=0,rounding_size=20",
+                            facecolor="#050814", edgecolor="#F59E0B", linewidth=3.5,
+                            alpha=shock_alpha, zorder=20
+                        )
+                        ax.add_patch(shock_bg)
+
+                        ax.text(540, card_y + 185, "★ CONTROVERSY // WATCH TILL END ★",
+                                fontsize=14.5, weight="bold", color="#F59E0B", ha="center", va="center",
+                                alpha=shock_alpha, zorder=21)
+
+                        display_hook = resolved_hook if len(resolved_hook) <= 38 else (resolved_hook[:36] + "..")
+                        display_hook_esc = display_hook.replace("$", r"\$")
+                        ax.text(540, card_y + 115, display_hook_esc.upper(),
+                                fontsize=24.0, weight="bold", color="#FFFFFF", ha="center", va="center",
+                                path_effects=[pe.withStroke(linewidth=4, foreground="#000000")],
+                                alpha=shock_alpha, zorder=21)
+
+                        ax.text(540, card_y + 45, "CAN YOU GUESS WHO WINS NUMBER #1? ★",
+                                fontsize=14.0, weight="bold", color="#38BDF8", ha="center", va="center",
+                                alpha=shock_alpha, zorder=21)
 
                 # Grab frame
                 writer.grab_frame()
 
         plt.close(fig)
-        print(f"  [SHORTS DUEL] Vertical animation successfully saved to: {output_file}")
+        events_path = os.path.join(os.path.dirname(os.path.abspath(output_file)), "overtake_events.json")
+        try:
+            with open(events_path, "w", encoding="utf-8") as f_ev:
+                json.dump(overtake_events, f_ev, indent=2)
+        except Exception:
+            pass
+        print(f"  [SHORTS DUEL] Vertical animation successfully saved to: {output_file} ({len(overtake_events)} overtakes)")
         return output_file

@@ -156,6 +156,15 @@ VIRAL_LORE_HEADLINES: Dict[str, Dict[int, str]] = {
         2024: "Venezuela retains crown with 303 Billion barrels, followed closely by Saudi Arabia",
         2026: "The 300-Billion Barrel Throne: Venezuela & Saudi Arabia control global energy future",
     },
+    "top_world_economies_gdp": {
+        2000: "USA leads world at \\$10.2T while India sits at #13 with just 470 Billion",
+        2008: "China surpasses Germany to become the world's 3rd largest economy",
+        2010: "China officially overtakes Japan, claiming global #2 behind the United States",
+        2015: "India breaks into the global Top 10, racing past \\$2 Trillion",
+        2022: "Historic Milestone: India officially overtakes the United Kingdom to become #5",
+        2024: "India hits \\$3.9 Trillion, rapidly closing the gap on Germany and Japan",
+        2026: "The \\$4 Trillion Giant: India overtakes Japan, setting sights on #3 globally",
+    },
 }
 
 # Thematic Color Palettes based on topic category
@@ -268,7 +277,7 @@ def format_metric_val(val: float, indicator_code: str = "") -> str:
     code = (indicator_code or "").lower()
     if any(k in code for k in ["oil", "barrel", "petroleum"]):
         return f"{val:,.1f}B Barrels"
-    if "market_cap" in code or "trillion" in code:
+    if any(k in code for k in ["market_cap", "trillion", "gdp", "econom"]):
         return f"${val:.2f}T"
     if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):
         return f"{val:.1f}%"
@@ -297,7 +306,7 @@ def format_gap_val(gap_val: float, indicator_code: str = "") -> str:
     code = (indicator_code or "").lower()
     if any(k in code for k in ["oil", "barrel", "petroleum"]):
         return f"{gap_val:,.1f}B Barrels"
-    if "market_cap" in code or "trillion" in code:
+    if any(k in code for k in ["market_cap", "trillion", "gdp", "econom"]):
         return f"${gap_val:.2f}T"
     if any(k in code for k in ["share", "percent", "language", "browser", "mobile_os"]):
         return f"{gap_val:.1f}%"

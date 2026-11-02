@@ -420,3 +420,92 @@ def describe_chime(variant: int) -> str:
     )
 
     return f"{index} ({spec['name']}, {notes} Hz)"
+
+
+# ---------------------------------------------------------
+# SHORTS RETENTION SFX (WHOOSH / BOOM / CASH BELL)
+# ---------------------------------------------------------
+
+def synthesize_whoosh(force: bool = False) -> Path | None:
+    """Synthesize high-speed swoosh sound effect for overtakes."""
+    target = ASSETS_SFX_DIR / "shorts_whoosh.wav"
+    if not force and target.exists():
+        return target
+    try:
+        ASSETS_SFX_DIR.mkdir(parents=True, exist_ok=True)
+        sr = 44100
+        dur = 0.38
+        n = int(sr * dur)
+        t = np.linspace(0, dur, n, endpoint=False)
+        noise = np.random.normal(0, 0.35, n)
+        sweep_freq = 1400.0 * (220.0 / 1400.0) ** (t / dur)
+        tone = np.sin(2.0 * np.pi * np.cumsum(sweep_freq) / sr)
+        env = np.sin(np.pi * (t / dur)) ** 2
+        samples = (0.55 * noise + 0.45 * tone) * env
+        samples = samples / max(1e-6, np.max(np.abs(samples))) * 0.85
+        pcm = (samples * 32767.0).astype(np.int16)
+        with wave.open(str(target), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(sr)
+            handle.writeframes(pcm.tobytes())
+        return target
+    except Exception as err:
+        print(f"⚠️ Whoosh SFX synthesis failed: {err}")
+        return None
+
+
+def synthesize_impact_boom(force: bool = False) -> Path | None:
+    """Synthesize deep sub-bass impact boom for 0.0s hook shock and climax overtakes."""
+    target = ASSETS_SFX_DIR / "shorts_impact.wav"
+    if not force and target.exists():
+        return target
+    try:
+        ASSETS_SFX_DIR.mkdir(parents=True, exist_ok=True)
+        sr = 44100
+        dur = 0.65
+        n = int(sr * dur)
+        t = np.linspace(0, dur, n, endpoint=False)
+        freq = 95.0 * (32.0 / 95.0) ** (t / dur)
+        tone = np.sin(2.0 * np.pi * np.cumsum(freq) / sr)
+        env = np.exp(-4.2 * t / dur)
+        samples = np.tanh(tone * 1.6) * env
+        samples = samples / max(1e-6, np.max(np.abs(samples))) * 0.90
+        pcm = (samples * 32767.0).astype(np.int16)
+        with wave.open(str(target), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(sr)
+            handle.writeframes(pcm.tobytes())
+        return target
+    except Exception as err:
+        print(f"⚠️ Impact boom SFX synthesis failed: {err}")
+        return None
+
+
+def synthesize_cash_bell(force: bool = False) -> Path | None:
+    """Synthesize bright dual-harmonic chime bell for ranking milestone and overtakes."""
+    target = ASSETS_SFX_DIR / "shorts_cash_bell.wav"
+    if not force and target.exists():
+        return target
+    try:
+        ASSETS_SFX_DIR.mkdir(parents=True, exist_ok=True)
+        sr = 44100
+        dur = 0.50
+        n = int(sr * dur)
+        t = np.linspace(0, dur, n, endpoint=False)
+        bell = (np.sin(2.0 * np.pi * 1760.0 * t) * 0.6 + np.sin(2.0 * np.pi * 2637.0 * t) * 0.4)
+        env = np.exp(-5.2 * t / dur)
+        samples = bell * env
+        samples = samples / max(1e-6, np.max(np.abs(samples))) * 0.75
+        pcm = (samples * 32767.0).astype(np.int16)
+        with wave.open(str(target), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(sr)
+            handle.writeframes(pcm.tobytes())
+        return target
+    except Exception as err:
+        print(f"⚠️ Cash bell SFX synthesis failed: {err}")
+        return None
+

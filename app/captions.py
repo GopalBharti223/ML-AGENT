@@ -191,3 +191,129 @@ def generate_srt(
     )
 
     return path
+
+
+def _format_ass_timestamp(seconds: float) -> str:
+    """Format float seconds to ASS format: H:MM:SS.cc"""
+    if seconds < 0:
+        seconds = 0.0
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    centis = int(round((seconds - int(seconds)) * 100))
+    if centis >= 100:
+        centis = 0
+        secs += 1
+    return f"{hours}:{minutes:02d}:{secs:02d}.{centis:02d}"
+
+
+def generate_ass_word_glow(
+    audio_data,
+    output_dir: str,
+    filename: str = "captions.ass",
+    time_offset: float = 0.0,
+    active_color_bgr: str = "&H0024E5FF&",  # Bright Neon Yellow / Gold
+    default_color_bgr: str = "&H00FFFFFF&", # Crisp White
+) -> str | None:
+    """Generate high-retention, word-by-word highlighted ASS captions for YouTube Shorts.
+
+    Each phrase (2-4 words) is displayed while the active spoken word lights up
+    in bright neon gold/yellow (active_color_bgr) while surrounding words stay crisp white.
+    """
+    if not audio_data:
+        return None
+
+    ass_lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "PlayResX: 1080",
+        "PlayResY: 1920",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        "Style: Default,Arial,50,&H00FFFFFF,&H000000FF,&H00080808,&H80000000,-1,0,0,0,100,100,0,0,1,3.8,1.2,2,40,40,240,1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+
+    event_count = 0
+
+    for item in audio_data:
+        if not isinstance(item, dict):
+            continue
+        narration = str(item.get("narration", "") or "").strip()
+        if not narration:
+            continue
+        try:
+            start = float(item.get("start_time") or 0.0) + time_offset
+            end = float(item.get("end_time") or start) + time_offset
+        except (TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+
+        words = narration.split()
+        if not words:
+            continue
+
+        # Split into short 3-word punchy phrases
+        phrases = []
+        cur_phrase = []
+        for w in words:
+            cur_phrase.append(w)
+            if len(cur_phrase) >= 3:
+                phrases.append(cur_phrase)
+                cur_phrase = []
+        if cur_phrase:
+            if len(cur_phrase) == 1 and phrases:
+                phrases[-1].extend(cur_phrase)
+            else:
+                phrases.append(cur_phrase)
+
+        total_words = sum(len(p) for p in phrases)
+        if total_words == 0:
+            continue
+
+        total_duration = end - start
+        cur_t = start
+
+        for phrase in phrases:
+            p_len = len(phrase)
+            p_duration = total_duration * (p_len / total_words)
+            p_end = cur_t + p_duration
+            w_duration = p_duration / p_len
+
+            for w_idx, active_word in enumerate(phrase):
+                w_start = cur_t + (w_idx * w_duration)
+                w_finish = w_start + w_duration if (w_idx < p_len - 1) else p_end
+
+                t_start_str = _format_ass_timestamp(w_start)
+                t_end_str = _format_ass_timestamp(w_finish)
+
+                # Build line with active word highlighted
+                parts = []
+                for idx, w in enumerate(phrase):
+                    clean_w = w.strip().upper()
+                    if idx == w_idx:
+                        parts.append(f"{{\\c{active_color_bgr}\\b1}}{clean_w}{{\\c{default_color_bgr}\\b0}}")
+                    else:
+                        parts.append(clean_w)
+
+                dialogue_text = " ".join(parts)
+                ass_lines.append(f"Dialogue: 0,{t_start_str},{t_end_str},Default,,0,0,0,,{dialogue_text}")
+                event_count += 1
+
+            cur_t = p_end
+
+    if event_count == 0:
+        return None
+
+    os.makedirs(output_dir, exist_ok=True)
+    ass_path = os.path.join(output_dir, filename)
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(ass_lines))
+
+    print(f"✨ Kinetic Glow ASS Subtitles generated: {ass_path} ({event_count} word events)")
+    return ass_path
