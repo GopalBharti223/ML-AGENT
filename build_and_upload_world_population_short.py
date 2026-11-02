@@ -18,7 +18,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from app.config import settings
 settings.VIDEO_FORMAT = "portrait"  # 1080x1920
-settings.BURN_CAPTIONS = True
+settings.BURN_CAPTIONS = False  # Avoid double subtitle overlay; native in-frame animated captions are used
 settings.BGM_ENABLED = True
 settings.BGM_VOLUME = 0.12
 

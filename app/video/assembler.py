@@ -1531,15 +1531,17 @@ class VideoAssembler:
                         "BorderStyle=1,Outline=1.2,Shadow=0.8,Alignment=2,MarginV=38'"
                     )
                 else:
-                    # Vertical shorts: sleek 14pt crisp white subtitles positioned safely below the year counter
+                    # Vertical shorts (1080x1920): Sleek, modern typography positioned in the safe eye-level
+                    # corridor (MarginV=440), safely above the bottom debate banner (Y=1540) and source citations (Y=1720).
+                    # Fixes giant letters and prevents overlapping/covering source attribution or interaction banners.
                     sub_filter = (
                         f"subtitles='{escaped_sub}':force_style="
-                        "'FontName=Arial,Bold=1,FontSize=14,"
+                        "'PlayResX=1080,PlayResY=1920,FontName=Arial,Bold=1,FontSize=26,"
                         "PrimaryColour=&H00FFFFFF,OutlineColour=&H000A0A0A,"
-                        "BorderStyle=1,Outline=1.4,Shadow=0.8,Alignment=2,MarginV=20'"
+                        "BorderStyle=1,Outline=2.0,Shadow=1.0,Alignment=2,MarginV=440,MarginL=80,MarginR=80'"
                     )
                 video_filter += f",{sub_filter}"
-                print("  -> Kinetic on-screen captions burned into video.")
+                print("  -> Kinetic on-screen captions burned into video (Safe-Zone calibrated).")
             except Exception as sub_err:
                 print(f"  -> Caption burning skipped ({sub_err}); continuing.")
 
