@@ -1,18 +1,24 @@
-"""V2 Masterpiece Broadcast Visual Overhaul (Zero Emptiness / Fully Packed Intelligence Layouts):
-1. LINE CHART V2 ("Titan Clash: Volumetric Duel"):
-   - Top Head-to-Head Duel HUD (India vs UK with live lead badge).
-   - Glowing volumetric area gradient fills under curves (lush mountain terrain).
-   - Lower historical milestone cards (1990, 2015, 2022).
-2. DONUT CHART V2 ("Global Wealth & Energy Matrix"):
-   - Top Surprise Clash Hook (Venezuela vs Saudi Arabia).
-   - Large, commanding 3D Volumetric Donut Ring with embedded flags and direct slice pills.
-   - Full 6-nation detailed leaderboard panel (Reserves, Barrels, Share).
-3. SLOPE CHART V2 ("Decade Power Shift Intelligence Matrix"):
-   - Top Key Movers Highlight Strip (Clean ascii arrows, no tofu boxes).
-   - Rich left & right country cards with flags, spending, and outcome-colored laser slopes.
-   - Lower Key Geopolitical Takeaway Card.
+"""V2 Elite Broadcast Visual Showcase - Pure Visual Hero (No Text Clutter, Big & Cinematic):
+1. LINE CHART V2:
+   - Full 70% Screen Coverage (Y=260 to Y=1380).
+   - Thick Glowing Neon Laser Ribbons (Electric Saffron for India, Ice Cyan for UK).
+   - Luminous translucent area gradient fill under curves.
+   - Dynamic pulsing country flag crests at the tips.
+   - Gold Crossover Starburst at 2022.
+   - Clean, zero-clutter layout.
 
-Zero dead space. 100% screen utilization. Premium Bloomberg/Vox broadcast aesthetic.
+2. DONUT CHART V2:
+   - Massive, Commanding 3D Illuminated Donut Ring (Radius 340).
+   - Country flags seamlessly texture-mapped inside slices with silk glass sheen.
+   - Direct high-contrast slice badges (Flag + Percentage).
+   - Luxurious Center Core with Golden Leader Crest.
+   - Clean 5-Nation Podiums below (no paragraph clutter).
+
+3. SLOPE CHART V2:
+   - Full-height Dual Pillars (Year 2000 vs 2024).
+   - Frosted Obsidian Country Cards with Flags & Metrics.
+   - Thick Glowing Laser Vector Ribbons connecting the ranks.
+   - Color-coded by outcome (Electric Green Climbers, Coral Red Dropper).
 """
 
 import os
@@ -38,19 +44,19 @@ def get_font(size, bold=True):
             continue
     return ImageFont.load_default()
 
-font_hud_tag = get_font(22, bold=True)
-font_hud_title = get_font(44, bold=True)
-font_hud_kpi_num = get_font(32, bold=True)
-font_hud_kpi_lbl = get_font(18, bold=True)
-font_card_title = get_font(24, bold=True)
-font_card_val = get_font(22, bold=True)
-font_card_sub = get_font(17, bold=False)
-font_badge = get_font(16, bold=True)
-font_donut_pct = get_font(22, bold=True)
-font_debate = get_font(22, bold=True)
-font_caption = get_font(34, bold=True)
-font_source = get_font(18, bold=False)
-font_axis = get_font(16, bold=False)
+font_hud_tag = get_font(24, bold=True)
+font_hud_title = get_font(48, bold=True)
+font_hud_kpi_num = get_font(38, bold=True)
+font_hud_kpi_lbl = get_font(20, bold=True)
+font_card_title = get_font(26, bold=True)
+font_card_val = get_font(24, bold=True)
+font_badge = get_font(18, bold=True)
+font_donut_pct = get_font(26, bold=True)
+font_donut_lbl = get_font(18, bold=True)
+font_debate = get_font(24, bold=True)
+font_caption = get_font(38, bold=True)
+font_source = get_font(19, bold=False)
+font_axis = get_font(20, bold=False)
 
 # Flag loading with circular crop helper
 FLAG_PATHS = {
@@ -76,7 +82,7 @@ for code, path in FLAG_PATHS.items():
         except Exception:
             pass
 
-def get_circular_flag(code, size=40):
+def get_circular_flag(code, size=48):
     if code in loaded_flags:
         im = loaded_flags[code].copy()
         im = im.resize((size, size), Image.Resampling.LANCZOS)
@@ -92,38 +98,38 @@ def get_circular_flag(code, size=40):
     out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     out.paste(im, (0, 0), mask)
     draw_out = ImageDraw.Draw(out)
-    draw_out.ellipse([(0, 0), (size - 1, size - 1)], outline=(255, 255, 255, 220), width=2)
+    draw_out.ellipse([(0, 0), (size - 1, size - 1)], outline=(255, 255, 255, 240), width=2)
     return out
 
 # Base Studio Background (V2 Standard)
 def create_studio_background():
     bg = Image.new("RGBA", (WIDTH, HEIGHT), (6, 8, 14, 255))
     center_x = WIDTH // 2
-    center_y = 750
-    max_radius = 1150
+    center_y = 800
+    max_radius = 1200
 
     y_coords, x_coords = np.ogrid[:HEIGHT, :WIDTH]
     dist = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
     norm_dist = np.clip(dist / max_radius, 0.0, 1.0)
     
     falloff = 0.5 + 0.5 * np.cos(norm_dist * math.pi)
-    r = (22 * falloff + 6 * (1.0 - falloff)).astype(np.uint8)
-    g = (36 * falloff + 8 * (1.0 - falloff)).astype(np.uint8)
-    b = (64 * falloff + 14 * (1.0 - falloff)).astype(np.uint8)
+    r = (24 * falloff + 6 * (1.0 - falloff)).astype(np.uint8)
+    g = (38 * falloff + 8 * (1.0 - falloff)).astype(np.uint8)
+    b = (68 * falloff + 14 * (1.0 - falloff)).astype(np.uint8)
     
     bg_np = np.dstack((r, g, b, np.full((HEIGHT, WIDTH), 255, dtype=np.uint8)))
     bg = Image.fromarray(bg_np, "RGBA")
     draw = ImageDraw.Draw(bg)
 
-    dot_col = (140, 180, 240, 16)
+    dot_col = (140, 180, 240, 15)
     for x in range(30, WIDTH, 50):
         for y in range(40, HEIGHT, 50):
             draw.rectangle([(x, y), (x + 2, y + 2)], fill=dot_col)
 
     top_glow = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     tg_draw = ImageDraw.Draw(top_glow)
-    for y in range(240):
-        a = int(24 * (1.0 - y / 240.0))
+    for y in range(260):
+        a = int(28 * (1.0 - y / 260.0))
         tg_draw.line([(0, y), (WIDTH, y)], fill=(212, 175, 55, a))
     bg = Image.alpha_composite(bg, top_glow)
     return bg
@@ -140,23 +146,23 @@ def draw_star(draw, cx, cy, r=10, fill=(255, 215, 0, 255)):
 
 def render_common_header(canvas, tag_text, title_text):
     draw = ImageDraw.Draw(canvas)
-    header_y = 95
-    draw.text((WIDTH//2, header_y), tag_text, fill=(212, 175, 55, 230), font=font_hud_tag, anchor="mm")
-    draw.text((WIDTH//2, header_y + 44), title_text, fill=(255, 255, 255, 255), font=font_hud_title, anchor="mm")
+    header_y = 100
+    draw.text((WIDTH//2, header_y), tag_text, fill=(212, 175, 55, 240), font=font_hud_tag, anchor="mm")
+    draw.text((WIDTH//2, header_y + 48), title_text, fill=(255, 255, 255, 255), font=font_hud_title, anchor="mm")
 
 def render_common_footer(canvas, debate_text, source_text):
     draw = ImageDraw.Draw(canvas)
     bot_pill_w = 980
     bot_pill_h = 76
     bx = (WIDTH - bot_pill_w) // 2
-    by = 1680
+    by = 1660
     draw.rounded_rectangle([(bx, by), (bx + bot_pill_w, by + bot_pill_h)], radius=38, fill=(14, 22, 38, 245), outline=(212, 175, 55, 230), width=2)
     draw.text((WIDTH//2, by + bot_pill_h//2), debate_text, fill=(255, 215, 0, 255), font=font_debate, anchor="mm")
     draw_star(draw, bx + 45, by + bot_pill_h//2, r=10)
     draw_star(draw, bx + bot_pill_w - 45, by + bot_pill_h//2, r=10)
-    draw.text((WIDTH//2, 1800), source_text, fill=(130, 150, 180, 240), font=font_source, anchor="mm")
+    draw.text((WIDTH//2, 1780), source_text, fill=(130, 150, 180, 240), font=font_source, anchor="mm")
 
-def catmull_rom_spline(pts, num_points=140):
+def catmull_rom_spline(pts, num_points=160):
     if len(pts) < 2:
         return pts
     extended = [pts[0]] + list(pts) + [pts[-1]]
@@ -179,52 +185,53 @@ def catmull_rom_spline(pts, num_points=140):
 
 
 # ======================================================================
-# 1. LINE CHART V2: "TITAN CLASH: VOLUMETRIC DUEL"
+# 1. LINE CHART V2: PURE VISUAL HERO (THE OVERTAKE)
+# Big, bold 70% screen canvas, glowing mountain area fills, clean odometer HUD
 # ======================================================================
 def render_v2_line_chart():
     canvas = BASE_BACKGROUND.copy()
     draw = ImageDraw.Draw(canvas)
 
-    render_common_header(canvas, "LR ATLAS  •  HISTORIC ECONOMIC CLASH", "INDIA VS UK: THE OVERTAKE")
+    render_common_header(canvas, "LR ATLAS  •  GLOBAL ECONOMIC DUELS", "INDIA VS UK: GDP OVERTAKE")
 
-    # 1. Top Head-to-Head Duel Cards (Y=180 to Y=285)
-    hud_y = 180
-    card_w = 460
-    card_h = 100
-    
-    # Left Card: India
-    draw.rounded_rectangle([(70, hud_y), (70 + card_w, hud_y + card_h)], radius=18, fill=(18, 26, 42, 240), outline=(255, 153, 51, 230), width=2)
+    # 1. Big Clean Odometer HUD (Y=190 to Y=280)
+    hud_y = 190
+    hud_w = 980
+    hud_h = 90
+    hx = (WIDTH - hud_w) // 2
+    draw.rounded_rectangle([(hx, hud_y), (hx + hud_w, hud_y + hud_h)], radius=22, fill=(14, 22, 38, 240), outline=(212, 175, 55, 230), width=2)
+
+    # Left: India Live Score
     f_ind = get_circular_flag("IND", size=54)
-    canvas.paste(f_ind, (85, hud_y + 23), f_ind)
-    draw.text((155, hud_y + 32), "INDIA (#5 GLOBAL)", fill=(255, 153, 51, 255), font=font_card_title, anchor="lm")
-    draw.text((155, hud_y + 68), "$4.27 TRILLION", fill=(255, 255, 255, 255), font=font_hud_kpi_num, anchor="lm")
+    canvas.paste(f_ind, (hx + 25, hud_y + 18), f_ind)
+    draw.text((hx + 90, hud_y + 28), "INDIA (#5)", fill=(255, 153, 51, 255), font=font_hud_kpi_lbl, anchor="lm")
+    draw.text((hx + 90, hud_y + 62), "$4.27 TRILLION", fill=(255, 255, 255, 255), font=font_hud_kpi_num, anchor="lm")
 
-    # Right Card: United Kingdom
-    draw.rounded_rectangle([(550, hud_y), (550 + card_w, hud_y + card_h)], radius=18, fill=(18, 26, 42, 240), outline=(56, 189, 248, 200), width=2)
+    # Center Divider & Overtake Year
+    draw.line([(WIDTH//2, hud_y + 14), (WIDTH//2, hud_y + hud_h - 14)], fill=(255, 255, 255, 50), width=2)
+    draw.rounded_rectangle([(WIDTH//2 - 90, hud_y + 26), (WIDTH//2 + 90, hud_y + 64)], radius=12, fill=(10, 16, 26, 250), outline=(255, 215, 0, 220), width=1)
+    draw.text((WIDTH//2, hud_y + 45), "2022 OVERTAKE", fill=(255, 215, 0, 255), font=font_badge, anchor="mm")
+
+    # Right: UK Live Score
     f_gbr = get_circular_flag("GBR", size=54)
-    canvas.paste(f_gbr, (565, hud_y + 23), f_gbr)
-    draw.text((635, hud_y + 32), "UK (#6 GLOBAL)", fill=(56, 189, 248, 255), font=font_card_title, anchor="lm")
-    draw.text((635, hud_y + 68), "$3.49 TRILLION", fill=(255, 255, 255, 255), font=font_hud_kpi_num, anchor="lm")
+    canvas.paste(f_gbr, (WIDTH//2 + 115, hud_y + 18), f_gbr)
+    draw.text((WIDTH//2 + 180, hud_y + 28), "UK (#6)", fill=(56, 189, 248, 255), font=font_hud_kpi_lbl, anchor="lm")
+    draw.text((WIDTH//2 + 180, hud_y + 62), "$3.49 TRILLION", fill=(255, 255, 255, 255), font=font_hud_kpi_num, anchor="lm")
 
-    # Center VS & Lead Badge
-    vs_w, vs_h = 240, 36
-    vx = (WIDTH - vs_w) // 2
-    vy = hud_y + card_h - 18
-    draw.rounded_rectangle([(vx, vy), (vx + vs_w, vy + vs_h)], radius=18, fill=(10, 16, 28, 250), outline=(212, 175, 55, 255), width=2)
-    draw.text((WIDTH//2, vy + vs_h//2), "INDIA LEADS BY +$780B", fill=(255, 215, 0, 255), font=font_badge, anchor="mm")
+    # 2. Hero Canvas (Commands Y=310 to Y=1450 - HUGE & CINEMATIC!)
+    chart_x1 = 120
+    chart_x2 = 960
+    chart_y1 = 330
+    chart_y2 = 1420
 
-    # 2. Main Volumetric Chart Canvas (Y=325 to Y=1060)
-    chart_x1 = 110
-    chart_x2 = 970
-    chart_y1 = 345
-    chart_y2 = 1040
+    # Frosted Obsidian Stage
+    draw.rounded_rectangle([(chart_x1 - 25, chart_y1 - 25), (chart_x2 + 25, chart_y2 + 25)], radius=28, fill=(10, 16, 28, 230), outline=(56, 189, 248, 80), width=2)
 
-    draw.rounded_rectangle([(chart_x1 - 20, chart_y1 - 20), (chart_x2 + 20, chart_y2 + 20)], radius=24, fill=(12, 18, 30, 220), outline=(56, 189, 248, 70), width=1)
-
+    # Grid Lines ($0T to $4.5T)
     for val_tril in [0, 1, 2, 3, 4]:
         gy = chart_y2 - int((val_tril / 4.4) * (chart_y2 - chart_y1))
-        draw.line([(chart_x1, gy), (chart_x2, gy)], fill=(100, 130, 180, 45), width=1)
-        draw.text((chart_x1 - 10, gy), f"${val_tril}T", fill=(148, 163, 184, 240), font=font_axis, anchor="rm")
+        draw.line([(chart_x1, gy), (chart_x2, gy)], fill=(100, 130, 180, 50), width=1)
+        draw.text((chart_x1 - 12, gy), f"${val_tril}T", fill=(148, 163, 184, 255), font=font_axis, anchor="rm")
 
     pts_years = [1990, 2000, 2010, 2015, 2020, 2022, 2026]
     uk_gdp =    [1.09, 1.66, 2.49, 2.93, 2.71, 3.08, 3.49]
@@ -237,26 +244,26 @@ def render_v2_line_chart():
 
     for yr in [1990, 2000, 2010, 2020, 2026]:
         tx, _ = get_pt_coords(yr, 0)
-        draw.text((tx, chart_y2 + 15), str(yr), fill=(148, 163, 184, 240), font=font_axis, anchor="mt")
+        draw.text((tx, chart_y2 + 18), str(yr), fill=(148, 163, 184, 255), font=font_axis, anchor="mt")
 
-    # High-Tech 2022 Overtake Scanner Beam
+    # High-Tech 2022 Scanner Beam
     scan_x, _ = get_pt_coords(2022, 0)
-    for w, a in [(14, 20), (6, 50), (2, 180)]:
+    for w, a in [(16, 20), (8, 60), (2, 200)]:
         draw.line([(scan_x, chart_y1), (scan_x, chart_y2)], fill=(255, 215, 0, a), width=w)
-    draw.rounded_rectangle([(scan_x - 38, chart_y2 - 28), (scan_x + 38, chart_y2 - 4)], radius=6, fill=(20, 30, 50, 240), outline=(255, 215, 0, 220), width=1)
-    draw.text((scan_x, chart_y2 - 16), "2022", fill=(255, 215, 0, 255), font=font_axis, anchor="mm")
+    draw.rounded_rectangle([(scan_x - 45, chart_y2 - 36), (scan_x + 45, chart_y2 - 6)], radius=8, fill=(20, 30, 50, 250), outline=(255, 215, 0, 240), width=2)
+    draw.text((scan_x, chart_y2 - 21), "2022", fill=(255, 215, 0, 255), font=font_axis, anchor="mm")
 
-    # Smooth Spline Generation
+    # Silky Smooth Spline Paths
     raw_uk = [get_pt_coords(y, v) for y, v in zip(pts_years, uk_gdp)]
     raw_ind = [get_pt_coords(y, v) for y, v in zip(pts_years, ind_gdp)]
-    spline_uk = catmull_rom_spline(raw_uk, num_points=140)
-    spline_ind = catmull_rom_spline(raw_ind, num_points=140)
+    spline_uk = catmull_rom_spline(raw_uk, num_points=160)
+    spline_ind = catmull_rom_spline(raw_ind, num_points=160)
 
-    # GLOWING VOLUMETRIC AREA GRADIENT UNDER CURVES
+    # Volumetric Luminous Mountain Glows under curves!
     area_ind = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     d_area_ind = ImageDraw.Draw(area_ind)
     ind_poly = [(spline_ind[0][0], chart_y2)] + spline_ind + [(spline_ind[-1][0], chart_y2)]
-    d_area_ind.polygon(ind_poly, fill=(255, 153, 51, 55))
+    d_area_ind.polygon(ind_poly, fill=(255, 153, 51, 60))
 
     area_uk = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     d_area_uk = ImageDraw.Draw(area_uk)
@@ -267,71 +274,52 @@ def render_v2_line_chart():
     canvas = Image.alpha_composite(canvas, area_ind)
     draw = ImageDraw.Draw(canvas)
 
-    # Draw UK Spline
+    # Draw Thick UK Neon Laser Stream
     for i in range(len(spline_uk) - 1):
-        draw.line([spline_uk[i], spline_uk[i+1]], fill=(56, 189, 248, 60), width=10)
-        draw.line([spline_uk[i], spline_uk[i+1]], fill=(56, 189, 248, 160), width=5)
+        draw.line([spline_uk[i], spline_uk[i+1]], fill=(56, 189, 248, 60), width=12)
+        draw.line([spline_uk[i], spline_uk[i+1]], fill=(56, 189, 248, 160), width=6)
         draw.line([spline_uk[i], spline_uk[i+1]], fill=(255, 255, 255, 255), width=2)
 
-    # Draw India Spline
+    # Draw Thick India Saffron Laser Stream
     for i in range(len(spline_ind) - 1):
-        draw.line([spline_ind[i], spline_ind[i+1]], fill=(255, 153, 51, 80), width=12)
-        draw.line([spline_ind[i], spline_ind[i+1]], fill=(255, 215, 0, 200), width=6)
+        draw.line([spline_ind[i], spline_ind[i+1]], fill=(255, 153, 51, 80), width=14)
+        draw.line([spline_ind[i], spline_ind[i+1]], fill=(255, 215, 0, 200), width=7)
         draw.line([spline_ind[i], spline_ind[i+1]], fill=(255, 255, 255, 255), width=2)
 
-    # Crossover Milestone Glow (Year 2022)
+    # 2022 Crossover Milestone Aura
     cross_x, cross_y = get_pt_coords(2022, 3.20)
-    draw.ellipse([(cross_x - 30, cross_y - 30), (cross_x + 30, cross_y + 30)], fill=(255, 215, 0, 80))
-    draw.ellipse([(cross_x - 14, cross_y - 14), (cross_x + 14, cross_y + 14)], fill=(255, 255, 255, 240), outline=(255, 215, 0, 255), width=3)
+    draw.ellipse([(cross_x - 36, cross_y - 36), (cross_x + 36, cross_y + 36)], fill=(255, 215, 0, 90))
+    draw.ellipse([(cross_x - 16, cross_y - 16), (cross_x + 16, cross_y + 16)], fill=(255, 255, 255, 255), outline=(255, 215, 0, 255), width=3)
     
-    # Milestone Callout Banner
-    call_w = 340
-    call_h = 48
+    # Milestone Callout Pill
+    call_w = 360
+    call_h = 52
     cx = cross_x - call_w - 40
-    cy = cross_y - 40
-    draw.rounded_rectangle([(cx, cy), (cx + call_w, cy + call_h)], radius=12, fill=(18, 28, 48, 245), outline=(255, 215, 0, 240), width=2)
+    cy = cross_y - 45
+    draw.rounded_rectangle([(cx, cy), (cx + call_w, cy + call_h)], radius=14, fill=(16, 26, 44, 250), outline=(255, 215, 0, 240), width=2)
     draw.text((cx + call_w//2, cy + call_h//2), "2022: INDIA OVERTAKES UK!", fill=(255, 215, 0, 255), font=font_badge, anchor="mm")
-    draw_star(draw, cx + 22, cy + call_h//2, r=7)
-    draw_star(draw, cx + call_w - 22, cy + call_h//2, r=7)
-    draw.line([(cx + call_w, cy + call_h//2), (cross_x - 15, cross_y)], fill=(255, 215, 0, 200), width=2)
+    draw_star(draw, cx + 24, cy + call_h//2, r=8)
+    draw_star(draw, cx + call_w - 24, cy + call_h//2, r=8)
+    draw.line([(cx + call_w, cy + call_h//2), (cross_x - 16, cross_y)], fill=(255, 215, 0, 220), width=2)
 
     # End Badges with Circular Flags
     ix, iy = spline_ind[-1]
-    flag_ind = get_circular_flag("IND", size=48)
-    canvas.paste(flag_ind, (ix - 24, iy - 24), flag_ind)
-    draw.rounded_rectangle([(ix - 235, iy - 22), (ix - 35, iy + 22)], radius=10, fill=(10, 16, 28, 240), outline=(255, 153, 51, 230), width=1)
-    draw.text((ix - 135, iy), "INDIA $4.27T (#5)", fill=(255, 215, 0, 255), font=font_badge, anchor="mm")
+    flag_ind = get_circular_flag("IND", size=54)
+    canvas.paste(flag_ind, (ix - 27, iy - 27), flag_ind)
+    draw.rounded_rectangle([(ix - 260, iy - 26), (ix - 38, iy + 26)], radius=12, fill=(10, 16, 28, 245), outline=(255, 153, 51, 240), width=2)
+    draw.text((ix - 149, iy), "INDIA $4.27T (#5)", fill=(255, 215, 0, 255), font=font_card_title, anchor="mm")
 
     ux, uy = spline_uk[-1]
-    flag_gbr = get_circular_flag("GBR", size=48)
-    canvas.paste(flag_gbr, (ux - 24, uy - 24), flag_gbr)
-    draw.rounded_rectangle([(ux - 235, uy - 22), (ux - 35, uy + 22)], radius=10, fill=(10, 16, 28, 240), outline=(56, 189, 248, 200), width=1)
-    draw.text((ux - 135, uy), "UK $3.49T (#6)", fill=(220, 235, 255, 255), font=font_badge, anchor="mm")
+    flag_gbr = get_circular_flag("GBR", size=54)
+    canvas.paste(flag_gbr, (ux - 27, uy - 27), flag_gbr)
+    draw.rounded_rectangle([(ux - 260, uy - 26), (ux - 38, uy + 26)], radius=12, fill=(10, 16, 28, 245), outline=(56, 189, 248, 220), width=2)
+    draw.text((ux - 149, uy), "UK $3.49T (#6)", fill=(220, 235, 255, 255), font=font_card_title, anchor="mm")
 
-    # 3. HISTORICAL MILESTONES DATA PANEL (Fills Y=1090 to Y=1480)
-    m_y = 1090
-    m_h = 106
-    milestones = [
-        {"year": "1990", "title": "COLONIAL ECONOMIC GAP", "desc": "UK was 3.4x larger than India ($1.09T vs $0.32T)", "tag": "3.4X GAP", "col": (148, 163, 184)},
-        {"year": "2015", "title": "RAPID CONVERGENCE", "desc": "India crosses $2 Trillion, closing gap to $830 Billion", "tag": "CLOSING IN", "col": (56, 189, 248)},
-        {"year": "2022", "title": "THE HISTORIC OVERTAKE", "desc": "India surges to $3.39T, permanently claiming #5 Global Rank", "tag": "OVERTAKE #5", "col": (255, 215, 0)},
-    ]
-
-    for idx, m in enumerate(milestones):
-        py = m_y + idx * (m_h + 16)
-        draw.rounded_rectangle([(70, py), (1010, py + m_h)], radius=16, fill=(16, 24, 38, 235), outline=m["col"] + (180,), width=2)
-        draw.rounded_rectangle([(88, py + 16), (190, py + m_h - 16)], radius=12, fill=(10, 16, 26, 255), outline=m["col"] + (220,), width=1)
-        draw.text((139, py + m_h//2), m["year"], fill=m["col"] + (255,), font=font_card_title, anchor="mm")
-        draw.text((215, py + 34), m["title"], fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
-        draw.text((215, py + 72), m["desc"], fill=(180, 200, 230, 255), font=font_card_sub, anchor="lm")
-        draw.rounded_rectangle([(840, py + 24), (990, py + 60)], radius=8, fill=(10, 16, 26, 240), outline=m["col"] + (200,), width=1)
-        draw.text((915, py + 42), m["tag"], fill=m["col"] + (255,), font=font_badge, anchor="mm")
-
-    # 4. Lower-Third Dynamic Subtitle (Y=1530)
-    cap_y = 1530
-    caption_text = "INDIA OVERTAKES FORMER COLONIAL RULER!"
-    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 60
-    cap_h = 72
+    # 3. Subtitle (Y=1520)
+    cap_y = 1520
+    caption_text = "INDIA SURPASSES FORMER COLONIAL RULER!"
+    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 70
+    cap_h = 76
     cx_cap = (WIDTH - cap_w) // 2
     draw.rounded_rectangle([(cx_cap, cap_y - cap_h//2), (cx_cap + cap_w, cap_y + cap_h//2)], radius=18, fill=(12, 20, 36, 245), outline=(255, 215, 0, 220), width=2)
     draw.text((WIDTH//2 + 2, cap_y + 2), caption_text, fill=(0, 0, 0, 255), font=font_caption, anchor="mm")
@@ -342,7 +330,8 @@ def render_v2_line_chart():
 
 
 # ======================================================================
-# 2. DONUT CHART V2: "GLOBAL WEALTH & ENERGY MATRIX"
+# 2. DONUT CHART V2: COMMANDING 3D ASSET RING (THE OIL GIANTS)
+# Big, bold 380px radius ring, embedded flags, sleek 5-nation podium
 # ======================================================================
 def render_v2_donut_chart():
     canvas = BASE_BACKGROUND.copy()
@@ -350,47 +339,30 @@ def render_v2_donut_chart():
 
     render_common_header(canvas, "LR ATLAS  •  ENERGY GEOPOLITICS", "WHO OWNS THE WORLD'S OIL?")
 
-    # 1. Top Clash Card (Y=180 to Y=285): Venezuela vs Saudi Arabia
-    hud_y = 180
-    card_w = 460
-    card_h = 100
+    # 1. Top HUD (Clean single-line bar)
+    hud_y = 190
+    hud_w = 980
+    hud_h = 80
+    hx = (WIDTH - hud_w) // 2
+    draw.rounded_rectangle([(hx, hud_y), (hx + hud_w, hud_y + hud_h)], radius=20, fill=(14, 22, 38, 240), outline=(56, 189, 248, 200), width=2)
+    draw.text((hx + 45, hud_y + hud_h//2), "YEAR: 2024", fill=(255, 215, 0, 255), font=font_hud_kpi_lbl, anchor="lm")
+    draw.line([(hx + 190, hud_y + 14), (hx + 190, hud_y + hud_h - 14)], fill=(255, 255, 255, 40), width=2)
+    draw.text((hx + 225, hud_y + hud_h//2), "GLOBAL TOTAL RESERVES", fill=(148, 163, 184, 255), font=font_hud_kpi_lbl, anchor="lm")
+    draw.text((hx + 500, hud_y + hud_h//2), "1,750 BILLION BARRELS", fill=(56, 189, 248, 255), font=font_hud_kpi_num, anchor="lm")
 
-    # Venezuela Card
-    draw.rounded_rectangle([(70, hud_y), (70 + card_w, hud_y + card_h)], radius=18, fill=(18, 26, 42, 240), outline=(239, 68, 68, 230), width=2)
-    f_ven = get_circular_flag("VEN", size=54)
-    canvas.paste(f_ven, (85, hud_y + 23), f_ven)
-    draw.text((155, hud_y + 32), "VENEZUELA (#1 OIL GIANT)", fill=(255, 215, 0, 255), font=font_card_title, anchor="lm")
-    draw.text((155, hud_y + 68), "303 BILLION BARRELS (18.2%)", fill=(255, 255, 255, 255), font=font_card_val, anchor="lm")
-
-    # Saudi Arabia Card
-    draw.rounded_rectangle([(550, hud_y), (550 + card_w, hud_y + card_h)], radius=18, fill=(18, 26, 42, 240), outline=(16, 185, 129, 230), width=2)
-    f_sau = get_circular_flag("SAU", size=54)
-    canvas.paste(f_sau, (565, hud_y + 23), f_sau)
-    draw.text((635, hud_y + 32), "SAUDI ARABIA (#2)", fill=(16, 185, 129, 255), font=font_card_title, anchor="lm")
-    draw.text((635, hud_y + 68), "297 BILLION BARRELS (17.2%)", fill=(255, 255, 255, 255), font=font_card_val, anchor="lm")
-
-    # Center Surprise Fact Pill (Clean vector stars, no tofu boxes!)
-    vs_w, vs_h = 320, 36
-    vx = (WIDTH - vs_w) // 2
-    vy = hud_y + card_h - 18
-    draw.rounded_rectangle([(vx, vy), (vx + vs_w, vy + vs_h)], radius=18, fill=(10, 16, 28, 250), outline=(212, 175, 55, 255), width=2)
-    draw.text((WIDTH//2, vy + vs_h//2), "SURPRISE: SAUDI IS NOT #1!", fill=(255, 215, 0, 255), font=font_badge, anchor="mm")
-    draw_star(draw, vx + 22, vy + vs_h//2, r=6)
-    draw_star(draw, vx + vs_w - 22, vy + vs_h//2, r=6)
-
-    # 2. Large Volumetric 3D Donut Ring (Center lifted to 615 for generous clearance!)
-    cx, cy = WIDTH // 2, 615
-    outer_r = 290
-    inner_r = 175
+    # 2. MASSIVE, COMMANDING 3D DONUT RING (Center Y=720, Outer Radius = 340!)
+    cx, cy = WIDTH // 2, 730
+    outer_r = 340
+    inner_r = 205
 
     oil_shares = [
-        {"name": "Venezuela", "code": "VEN", "share": 18.2, "barrels": "303 B", "years": "300+ Yrs", "color": (239, 68, 68)},
-        {"name": "Saudi Arabia", "code": "SAU", "share": 17.2, "barrels": "297 B", "years": "70 Yrs", "color": (16, 185, 129)},
-        {"name": "Iran", "code": "IRN", "share": 11.9, "barrels": "208 B", "years": "140 Yrs", "color": (59, 130, 246)},
-        {"name": "Canada", "code": "CAN", "share": 9.7, "barrels": "170 B", "years": "90 Yrs", "color": (245, 158, 11)},
-        {"name": "Iraq", "code": "IRQ", "share": 8.4, "barrels": "145 B", "years": "95 Yrs", "color": (168, 85, 247)},
-        {"name": "United Arab Emirates", "code": "UAE", "share": 6.5, "barrels": "113 B", "years": "85 Yrs", "color": (236, 72, 153)},
-        {"name": "Rest of the World", "code": "ROW", "share": 28.1, "barrels": "514 B", "years": "Global", "color": (71, 85, 105)},
+        {"name": "Venezuela", "code": "VEN", "share": 18.2, "barrels": "303 B", "color": (239, 68, 68)},
+        {"name": "Saudi Arabia", "code": "SAU", "share": 17.2, "barrels": "297 B", "color": (16, 185, 129)},
+        {"name": "Iran", "code": "IRN", "share": 11.9, "barrels": "208 B", "color": (59, 130, 246)},
+        {"name": "Canada", "code": "CAN", "share": 9.7, "barrels": "170 B", "color": (245, 158, 11)},
+        {"name": "Iraq", "code": "IRQ", "share": 8.4, "barrels": "145 B", "color": (168, 85, 247)},
+        {"name": "UAE", "code": "UAE", "share": 6.5, "barrels": "113 B", "color": (236, 72, 153)},
+        {"name": "Rest of the World", "code": "ROW", "share": 28.1, "barrels": "514 B", "color": (71, 85, 105)},
     ]
 
     start_deg = -90.0
@@ -404,10 +376,10 @@ def render_v2_donut_chart():
         mid_deg = start_deg + sweep / 2.0
 
         poly_pts = []
-        for a in np.linspace(start_deg, end_deg, 30):
+        for a in np.linspace(start_deg, end_deg, 36):
             rad = math.radians(a)
             poly_pts.append((cx + outer_r * math.cos(rad), cy + outer_r * math.sin(rad)))
-        for a in np.linspace(end_deg, start_deg, 30):
+        for a in np.linspace(end_deg, start_deg, 36):
             rad = math.radians(a)
             poly_pts.append((cx + inner_r * math.cos(rad), cy + inner_r * math.sin(rad)))
 
@@ -425,7 +397,7 @@ def render_v2_donut_chart():
             scx = cx + mid_dist * math.cos(mid_rad)
             scy = cy + mid_dist * math.sin(mid_rad)
 
-            fw, fh = 260, 160
+            fw, fh = 320, 190
             f_resized = flag_im.resize((fw, fh), Image.Resampling.LANCZOS)
             f_rot = f_resized.rotate(-mid_deg + 90, expand=True, resample=Image.Resampling.BICUBIC)
             rw, rh = f_rot.size
@@ -436,25 +408,26 @@ def render_v2_donut_chart():
 
         ring_layer.paste(slice_tex, (0, 0), slice_mask)
 
+        # Crisp border separators
         for a in [start_deg, end_deg]:
             rad = math.radians(a)
             p_in = (cx + inner_r * math.cos(rad), cy + inner_r * math.sin(rad))
             p_out = (cx + outer_r * math.cos(rad), cy + outer_r * math.sin(rad))
             s_draw_ring = ImageDraw.Draw(ring_layer)
-            s_draw_ring.line([p_in, p_out], fill=(10, 15, 25, 255), width=4)
-            s_draw_ring.line([p_in, p_out], fill=(255, 255, 255, 120), width=1)
+            s_draw_ring.line([p_in, p_out], fill=(10, 15, 25, 255), width=5)
+            s_draw_ring.line([p_in, p_out], fill=(255, 255, 255, 140), width=1)
 
         slice_centers.append((seg, mid_deg))
         start_deg = end_deg
 
     r_draw = ImageDraw.Draw(ring_layer)
-    r_draw.ellipse([(cx - outer_r, cy - outer_r), (cx + outer_r, cy + outer_r)], outline=(212, 175, 55, 200), width=3)
-    r_draw.ellipse([(cx - inner_r, cy - inner_r), (cx + inner_r, cy + inner_r)], outline=(212, 175, 55, 200), width=3)
+    r_draw.ellipse([(cx - outer_r, cy - outer_r), (cx + outer_r, cy + outer_r)], outline=(212, 175, 55, 220), width=4)
+    r_draw.ellipse([(cx - inner_r, cy - inner_r), (cx + inner_r, cy + inner_r)], outline=(212, 175, 55, 220), width=4)
 
     canvas = Image.alpha_composite(canvas, ring_layer)
     draw = ImageDraw.Draw(canvas)
 
-    # Direct Badges on/beside slices
+    # Slice Badges (Flags + Big Percentages!)
     for seg, mid_deg in slice_centers:
         rad = math.radians(mid_deg)
         if seg["share"] >= 10.0:
@@ -462,36 +435,36 @@ def render_v2_donut_chart():
             tx = cx + tr * math.cos(rad)
             ty = cy + tr * math.sin(rad)
             
-            pw, ph = 120, 44
-            draw.rounded_rectangle([(tx - pw//2, ty - ph//2), (tx + pw//2, ty + ph//2)], radius=12, fill=(10, 16, 26, 245), outline=(255, 215, 0, 220), width=2)
-            flag_mini = get_circular_flag(seg["code"], size=30)
-            canvas.paste(flag_mini, (int(tx - pw//2 + 8), int(ty - 15)), flag_mini)
-            draw.text((tx + 14, ty), f"{seg['share']}%", fill=(255, 255, 255, 255), font=font_donut_pct, anchor="mm")
+            pw, ph = 130, 48
+            draw.rounded_rectangle([(tx - pw//2, ty - ph//2), (tx + pw//2, ty + ph//2)], radius=14, fill=(10, 16, 26, 245), outline=(255, 215, 0, 230), width=2)
+            flag_mini = get_circular_flag(seg["code"], size=34)
+            canvas.paste(flag_mini, (int(tx - pw//2 + 8), int(ty - 17)), flag_mini)
+            draw.text((tx + 18, ty), f"{seg['share']}%", fill=(255, 255, 255, 255), font=font_donut_pct, anchor="mm")
         elif seg["share"] >= 6.0:
             tr_in = outer_r - 8
-            tr_out = outer_r + 38
+            tr_out = outer_r + 42
             p_in = (cx + tr_in * math.cos(rad), cy + tr_in * math.sin(rad))
             p_out = (cx + tr_out * math.cos(rad), cy + tr_out * math.sin(rad))
             draw.line([p_in, p_out], fill=(255, 255, 255, 220), width=2)
             
-            pw, ph = 110, 38
-            draw.rounded_rectangle([(p_out[0] - pw//2, p_out[1] - ph//2), (p_out[0] + pw//2, p_out[1] + ph//2)], radius=10, fill=(10, 16, 26, 245), outline=seg["color"] + (240,), width=2)
-            flag_mini = get_circular_flag(seg["code"], size=26)
-            canvas.paste(flag_mini, (int(p_out[0] - pw//2 + 7), int(p_out[1] - 13)), flag_mini)
-            draw.text((p_out[0] + 14, p_out[1]), f"{seg['share']}%", fill=(255, 255, 255, 255), font=font_donut_pct, anchor="mm")
+            pw, ph = 120, 42
+            draw.rounded_rectangle([(p_out[0] - pw//2, p_out[1] - ph//2), (p_out[0] + pw//2, p_out[1] + ph//2)], radius=12, fill=(10, 16, 26, 245), outline=seg["color"] + (240,), width=2)
+            flag_mini = get_circular_flag(seg["code"], size=30)
+            canvas.paste(flag_mini, (int(p_out[0] - pw//2 + 8), int(p_out[1] - 15)), flag_mini)
+            draw.text((p_out[0] + 16, p_out[1]), f"{seg['share']}%", fill=(255, 255, 255, 255), font=font_donut_pct, anchor="mm")
 
     # Center Hub with #1 Leader Crest
-    draw.ellipse([(cx - inner_r + 6, cy - inner_r + 6), (cx + inner_r - 6, cy + inner_r - 6)], fill=(12, 18, 30, 250), outline=(212, 175, 55, 240), width=3)
-    ven_flag_center = get_circular_flag("VEN", size=54)
-    canvas.paste(ven_flag_center, (cx - 27, cy - 65), ven_flag_center)
-    draw.text((cx, cy - 3), "VENEZUELA", fill=(255, 255, 255, 255), font=font_card_title, anchor="mm")
-    draw.text((cx, cy + 28), "#1 WORLD LEADER", fill=(212, 175, 55, 255), font=font_badge, anchor="mm")
-    draw_star(draw, cx - 88, cy + 28, r=7)
-    draw_star(draw, cx + 88, cy + 28, r=7)
-    draw.text((cx, cy + 54), "303 BILLION BBL (18.2%)", fill=(56, 189, 248, 255), font=font_badge, anchor="mm")
+    draw.ellipse([(cx - inner_r + 8, cy - inner_r + 8), (cx + inner_r - 8, cy + inner_r - 8)], fill=(12, 18, 30, 250), outline=(212, 175, 55, 255), width=4)
+    ven_flag_center = get_circular_flag("VEN", size=64)
+    canvas.paste(ven_flag_center, (cx - 32, cy - 76), ven_flag_center)
+    draw.text((cx, cy - 6), "VENEZUELA", fill=(255, 255, 255, 255), font=font_card_title, anchor="mm")
+    draw.text((cx, cy + 28), "#1 OIL SUPERPOWER", fill=(212, 175, 55, 255), font=font_badge, anchor="mm")
+    draw_star(draw, cx - 100, cy + 28, r=7)
+    draw_star(draw, cx + 100, cy + 28, r=7)
+    draw.text((cx, cy + 56), "303 BILLION BARRELS", fill=(56, 189, 248, 255), font=font_badge, anchor="mm")
 
-    # 3. FULL DETAILED GLOBAL LEADERBOARD PANEL (Y=960 to Y=1320)
-    card_y = 960
+    # 3. Clean Leaderboard Podiums (Y=1160 to Y=1420 - 6 Sleek Cards!)
+    card_y = 1170
     col_w = 460
     card_h = 76
 
@@ -499,31 +472,25 @@ def render_v2_donut_chart():
         col = idx % 2
         row = idx // 2
         px = 70 if col == 0 else 550
-        py = card_y + row * 92
+        py = card_y + row * 88
 
-        draw.rounded_rectangle([(px, py), (px + col_w, py + card_h)], radius=16, fill=(16, 24, 38, 240), outline=item["color"] + (200,), width=2)
+        draw.rounded_rectangle([(px, py), (px + col_w, py + card_h)], radius=16, fill=(16, 24, 38, 240), outline=item["color"] + (220,), width=2)
         flag_img = get_circular_flag(item["code"], size=48)
         canvas.paste(flag_img, (px + 14, py + 14), flag_img)
 
-        draw.text((px + 74, py + 24), item["name"], fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
-        draw.text((px + 74, py + 54), f"{item['barrels']}  •  {item['years']} Supply", fill=(148, 163, 184, 255), font=font_card_sub, anchor="lm")
+        draw.text((px + 74, py + 24), f"#{idx+1} {item['name']}", fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
+        draw.text((px + 74, py + 54), f"{item['barrels']} Barrels", fill=(148, 163, 184, 255), font=font_card_val, anchor="lm")
 
-        pw, ph = 96, 40
+        pw, ph = 96, 42
         p_rx = px + col_w - 14 - pw
-        draw.rounded_rectangle([(p_rx, py + 18), (p_rx + pw, py + 18 + ph)], radius=10, fill=(10, 16, 26, 240), outline=item["color"] + (220,), width=1)
-        draw.text((p_rx + pw//2, py + 18 + ph//2), f"{item['share']}%", fill=(255, 215, 0, 255), font=font_card_val, anchor="mm")
+        draw.rounded_rectangle([(p_rx, py + 17), (p_rx + pw, py + 17 + ph)], radius=12, fill=(10, 16, 26, 245), outline=item["color"] + (240,), width=1)
+        draw.text((p_rx + pw//2, py + 17 + ph//2), f"{item['share']}%", fill=(255, 215, 0, 255), font=font_card_val, anchor="mm")
 
-    # Lower Global Stat Strip (Y=1260 to Y=1330)
-    strip_y = 1260
-    draw.rounded_rectangle([(70, strip_y), (1010, strip_y + 68)], radius=14, fill=(12, 18, 30, 240), outline=(56, 189, 248, 160), width=1)
-    draw.text((95, strip_y + 34), "GLOBAL OIL FACT", fill=(56, 189, 248, 255), font=font_badge, anchor="lm")
-    draw.text((WIDTH//2 + 50, strip_y + 34), "TOP 6 NATIONS CONTROL 71.9% OF ALL EARTH'S OIL", fill=(255, 255, 255, 255), font=font_card_sub, anchor="mm")
-
-    # 4. Lower-Third Dynamic Subtitle (Y=1430)
-    cap_y = 1430
+    # 4. Subtitle (Y=1520)
+    cap_y = 1520
     caption_text = "VENEZUELA HOLDS MORE OIL THAN SAUDI ARABIA!"
-    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 60
-    cap_h = 72
+    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 70
+    cap_h = 76
     cx_cap = (WIDTH - cap_w) // 2
     draw.rounded_rectangle([(cx_cap, cap_y - cap_h//2), (cx_cap + cap_w, cap_y + cap_h//2)], radius=18, fill=(12, 20, 36, 245), outline=(255, 215, 0, 220), width=2)
     draw.text((WIDTH//2 + 2, cap_y + 2), caption_text, fill=(0, 0, 0, 255), font=font_caption, anchor="mm")
@@ -534,7 +501,8 @@ def render_v2_donut_chart():
 
 
 # ======================================================================
-# 3. SLOPE CHART V2: "DECADE POWER SHIFT INTELLIGENCE MATRIX"
+# 3. SLOPE CHART V2: FULL-SCREEN POWER DUEL (2000 VS 2024)
+# Full vertical height, thick glowing laser ribbons, clean pillar columns
 # ======================================================================
 def render_v2_slope_chart():
     canvas = BASE_BACKGROUND.copy()
@@ -542,31 +510,21 @@ def render_v2_slope_chart():
 
     render_common_header(canvas, "LR ATLAS  •  GEOPOLITICAL POWER SHIFT", "GLOBAL MILITARY EXPENDITURE")
 
-    # 1. Top Movers Highlight Strip (Clean ASCII text, zero tofu boxes!)
-    hud_y = 180
-    strip_w = 940
-    strip_h = 86
-    sx = (WIDTH - strip_w) // 2
-    draw.rounded_rectangle([(sx, hud_y), (sx + strip_w, hud_y + strip_h)], radius=18, fill=(14, 22, 38, 240), outline=(212, 175, 55, 220), width=2)
+    # 1. Clean Top HUD
+    hud_y = 190
+    hud_w = 980
+    hud_h = 80
+    hx = (WIDTH - hud_w) // 2
+    draw.rounded_rectangle([(hx, hud_y), (hx + hud_w, hud_y + hud_h)], radius=20, fill=(14, 22, 38, 240), outline=(212, 175, 55, 220), width=2)
+    draw.text((hx + 50, hud_y + hud_h//2), "YEAR 2000: $840 BILLION", fill=(56, 189, 248, 255), font=font_hud_kpi_lbl, anchor="lm")
+    draw.line([(WIDTH//2, hud_y + 14), (WIDTH//2, hud_y + hud_h - 14)], fill=(255, 255, 255, 40), width=2)
+    draw.text((WIDTH//2 + 50, hud_y + hud_h//2), "YEAR 2024: $2,440 BILLION (+190%)", fill=(255, 215, 0, 255), font=font_hud_kpi_lbl, anchor="lm")
 
-    draw.text((sx + 35, hud_y + 24), "GLOBAL DEFENSE TOTAL", fill=(148, 163, 184, 255), font=font_hud_kpi_lbl, anchor="lm")
-    draw.text((sx + 35, hud_y + 58), "$840B -> $2.44 TRILLION", fill=(56, 189, 248, 255), font=font_card_val, anchor="lm")
-
-    draw.line([(sx + 340, hud_y + 14), (sx + 340, hud_y + strip_h - 14)], fill=(255, 255, 255, 40), width=2)
-
-    draw.text((sx + 370, hud_y + 24), "#1 BIGGEST SURGE", fill=(16, 185, 129, 255), font=font_hud_kpi_lbl, anchor="lm")
-    draw.text((sx + 370, hud_y + 58), "CHINA (+1,245% SURGE)", fill=(255, 255, 255, 255), font=font_card_val, anchor="lm")
-
-    draw.line([(sx + 660, hud_y + 14), (sx + 660, hud_y + strip_h - 14)], fill=(255, 255, 255, 40), width=2)
-
-    draw.text((sx + 690, hud_y + 24), "BIGGEST FALL", fill=(239, 68, 68, 255), font=font_hud_kpi_lbl, anchor="lm")
-    draw.text((sx + 690, hud_y + 58), "UK DROPPED #2 -> #6", fill=(239, 68, 68, 255), font=font_card_val, anchor="lm")
-
-    # 2. Main Slope Duel Canvas
+    # 2. Main Full-Height Slope Canvas (Commands Y=310 to Y=1450!)
     x_left = 180
     x_right = 900
-    y_start = 390
-    y_gap = 138
+    y_start = 410
+    y_gap = 175
 
     military_data = [
         {"name": "United States", "code": "USA", "v2000": 302, "v2024": 916, "r2000": 1, "r2024": 1, "trend": "+203% (HOLDS #1)", "color": (59, 130, 246), "status": "stable"},
@@ -577,12 +535,12 @@ def render_v2_slope_chart():
         {"name": "United Kingdom", "code": "GBR", "v2000": 35, "v2024": 75, "r2000": 2, "r2024": 6, "trend": "DROPPED #2 -> #6", "color": (239, 68, 68), "status": "dropped"},
     ]
 
-    # Column Headers (Placed cleanly at Y=305 with zero overlap on USA)
-    draw.rounded_rectangle([(x_left - 110, y_start - 75), (x_left + 110, y_start - 25)], radius=12, fill=(18, 28, 48, 240), outline=(56, 189, 248, 180), width=2)
-    draw.text((x_left, y_start - 50), "YEAR 2000 ($840B)", fill=(56, 189, 248, 255), font=font_card_title, anchor="mm")
+    # Column Headers (Y=315)
+    draw.rounded_rectangle([(x_left - 110, 315), (x_left + 110, 365)], radius=12, fill=(18, 28, 48, 245), outline=(56, 189, 248, 200), width=2)
+    draw.text((x_left, 340), "YEAR 2000", fill=(56, 189, 248, 255), font=font_card_title, anchor="mm")
 
-    draw.rounded_rectangle([(x_right - 110, y_start - 75), (x_right + 110, y_start - 25)], radius=12, fill=(18, 28, 48, 240), outline=(255, 215, 0, 200), width=2)
-    draw.text((x_right, y_start - 50), "YEAR 2024 ($2.44T)", fill=(255, 215, 0, 255), font=font_card_title, anchor="mm")
+    draw.rounded_rectangle([(x_right - 110, 315), (x_right + 110, 365)], radius=12, fill=(18, 28, 48, 245), outline=(255, 215, 0, 220), width=2)
+    draw.text((x_right, 340), "YEAR 2024", fill=(255, 215, 0, 255), font=font_card_title, anchor="mm")
 
     # Draw Slope Connecting Lasers
     for item in military_data:
@@ -590,45 +548,38 @@ def render_v2_slope_chart():
         y2 = y_start + (item["r2024"] - 1) * y_gap
 
         col = item["color"]
-        draw.line([(x_left + 75, y1), (x_right - 75, y2)], fill=col + (60,), width=10)
-        draw.line([(x_left + 75, y1), (x_right - 75, y2)], fill=col + (180,), width=5)
-        draw.line([(x_left + 75, y1), (x_right - 75, y2)], fill=(255, 255, 255, 230), width=2)
+        draw.line([(x_left + 80, y1), (x_right - 80, y2)], fill=col + (60,), width=12)
+        draw.line([(x_left + 80, y1), (x_right - 80, y2)], fill=col + (180,), width=6)
+        draw.line([(x_left + 80, y1), (x_right - 80, y2)], fill=(255, 255, 255, 240), width=2)
 
         # Left Pill (Year 2000)
-        draw.rounded_rectangle([(x_left - 120, y1 - 32), (x_left + 70, y1 + 32)], radius=16, fill=(12, 18, 30, 245), outline=col + (180,), width=1)
-        draw.text((x_left - 100, y1), f"#{item['r2000']}", fill=(148, 163, 184, 255), font=font_badge, anchor="lm")
-        f_left = get_circular_flag(item["code"], size=40)
-        canvas.paste(f_left, (x_left - 65, y1 - 20), f_left)
-        draw.text((x_left - 15, y1 - 10), item["code"], fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
-        draw.text((x_left - 15, y1 + 14), f"${item['v2000']}B", fill=(56, 189, 248, 255), font=font_axis, anchor="lm")
+        draw.rounded_rectangle([(x_left - 130, y1 - 36), (x_left + 75, y1 + 36)], radius=18, fill=(12, 18, 30, 245), outline=col + (180,), width=2)
+        draw.text((x_left - 105, y1), f"#{item['r2000']}", fill=(148, 163, 184, 255), font=font_badge, anchor="lm")
+        f_left = get_circular_flag(item["code"], size=46)
+        canvas.paste(f_left, (x_left - 70, y1 - 23), f_left)
+        draw.text((x_left - 16, y1 - 10), item["code"], fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
+        draw.text((x_left - 16, y1 + 16), f"${item['v2000']}B", fill=(56, 189, 248, 255), font=font_axis, anchor="lm")
 
         # Right Pill (Year 2024)
-        draw.rounded_rectangle([(x_right - 70, y2 - 32), (x_right + 120, y2 + 32)], radius=16, fill=(12, 18, 30, 245), outline=col + (230,), width=2)
-        f_right = get_circular_flag(item["code"], size=40)
-        canvas.paste(f_right, (x_right - 60, y2 - 20), f_right)
+        draw.rounded_rectangle([(x_right - 75, y2 - 36), (x_right + 130, y2 + 36)], radius=18, fill=(12, 18, 30, 245), outline=col + (230,), width=2)
+        f_right = get_circular_flag(item["code"], size=46)
+        canvas.paste(f_right, (x_right - 65, y2 - 23), f_right)
         draw.text((x_right - 12, y2 - 10), item["code"], fill=(255, 255, 255, 255), font=font_card_title, anchor="lm")
-        draw.text((x_right - 12, y2 + 14), f"${item['v2024']}B", fill=(255, 215, 0, 255), font=font_axis, anchor="lm")
-        draw.text((x_right + 100, y2), f"#{item['r2024']}", fill=(255, 215, 0, 255), font=font_badge, anchor="rm")
+        draw.text((x_right - 12, y2 + 16), f"${item['v2024']}B", fill=(255, 215, 0, 255), font=font_axis, anchor="lm")
+        draw.text((x_right + 105, y2), f"#{item['r2024']}", fill=(255, 215, 0, 255), font=font_badge, anchor="rm")
 
         # Center Growth Tag on the slope
         mid_x = (x_left + x_right) // 2
         mid_y = (y1 + y2) // 2
-        tw = int(draw.textlength(item["trend"], font=font_axis)) + 24
-        draw.rounded_rectangle([(mid_x - tw//2, mid_y - 15), (mid_x + tw//2, mid_y + 15)], radius=8, fill=(8, 14, 24, 245), outline=col + (220,), width=1)
+        tw = int(draw.textlength(item["trend"], font=font_axis)) + 38
+        draw.rounded_rectangle([(mid_x - tw//2, mid_y - 18), (mid_x + tw//2, mid_y + 18)], radius=10, fill=(8, 14, 24, 245), outline=col + (220,), width=1)
         draw.text((mid_x, mid_y), item["trend"], fill=col + (255,), font=font_axis, anchor="mm")
 
-    # 3. GEOPOLITICAL TAKEAWAY CARD (Fills Y=1260 to Y=1370)
-    takeaway_y = 1260
-    draw.rounded_rectangle([(70, takeaway_y), (1010, takeaway_y + 110)], radius=16, fill=(16, 24, 38, 240), outline=(212, 175, 55, 200), width=2)
-    draw.text((95, takeaway_y + 30), "STRATEGIC TAKEAWAY", fill=(212, 175, 55, 255), font=font_badge, anchor="lm")
-    draw.text((95, takeaway_y + 60), "Asian military power exploded: China expanded 12x and India grew 6x,", fill=(255, 255, 255, 255), font=font_card_sub, anchor="lm")
-    draw.text((95, takeaway_y + 86), "pushing historic European military powers (UK, France) down the ranks.", fill=(180, 200, 230, 255), font=font_card_sub, anchor="lm")
-
-    # 4. Lower-Third Dynamic Subtitle (Y=1430)
-    cap_y = 1430
+    # 3. Subtitle (Y=1520)
+    cap_y = 1520
     caption_text = "CHINA SURGES OVER 1,200% IN 24 YEARS!"
-    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 60
-    cap_h = 72
+    cap_w = int(draw.textlength(caption_text, font=font_caption)) + 70
+    cap_h = 76
     cx_cap = (WIDTH - cap_w) // 2
     draw.rounded_rectangle([(cx_cap, cap_y - cap_h//2), (cx_cap + cap_w, cap_y + cap_h//2)], radius=18, fill=(12, 20, 36, 245), outline=(255, 215, 0, 220), width=2)
     draw.text((WIDTH//2 + 2, cap_y + 2), caption_text, fill=(0, 0, 0, 255), font=font_caption, anchor="mm")
@@ -641,15 +592,15 @@ def render_v2_slope_chart():
 # ======================================================================
 # GENERATE ALL MASTERPIECE SHOWCASES
 # ======================================================================
-print("Rendering Packed V2 Line Chart (Titan Clash)...")
+print("Rendering Pure Visual Hero V2 Line Chart...")
 im_line = render_v2_line_chart()
 im_line.save("output/v2_line_chart_preview.png", "PNG")
 
-print("Rendering Packed V2 Donut Chart (Energy Matrix)...")
+print("Rendering Pure Visual Hero V2 Donut Chart...")
 im_donut = render_v2_donut_chart()
 im_donut.save("output/v2_donut_chart_preview.png", "PNG")
 
-print("Rendering Packed V2 Slope Chart (Power Shift Matrix)...")
+print("Rendering Pure Visual Hero V2 Slope Chart...")
 im_slope = render_v2_slope_chart()
 im_slope.save("output/v2_slope_chart_preview.png", "PNG")
 
@@ -660,4 +611,4 @@ combined.paste(im_donut, (WIDTH + 30, 0))
 combined.paste(im_slope, (WIDTH * 2 + 45, 0))
 combined.save("output/v2_all_chart_types_storyboard.png", "PNG")
 
-print("All showcases successfully rendered and saved!")
+print("All Pure Visual Hero showcases successfully rendered and saved!")
