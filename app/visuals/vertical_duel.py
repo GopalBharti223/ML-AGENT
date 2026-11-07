@@ -437,6 +437,14 @@ class VerticalDuelEngine:
                         monogram = "IR"
                     elif "Iraq" in name:
                         monogram = "IQ"
+                    elif "Qatar" in name:
+                        monogram = "QA"
+                    elif "Australia" in name:
+                        monogram = "AUS"
+                    elif "Norway" in name:
+                        monogram = "NOR"
+                    elif "Algeria" in name:
+                        monogram = "DZ"
                     else:
                         monogram = name[0].upper() if name else "?"
                     ax.text(icon_cx, icon_cy, monogram, fontsize=12.5 if len(monogram) > 1 else 14,

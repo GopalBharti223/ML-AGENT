@@ -156,6 +156,16 @@ VIRAL_LORE_HEADLINES: Dict[str, Dict[int, str]] = {
         2024: "Venezuela retains crown with 303 Billion barrels, followed closely by Saudi Arabia",
         2026: "The 300-Billion Barrel Throne: Venezuela & Saudi Arabia control global energy future",
     },
+    "natural_gas_production": {
+        1990: "Soviet Legacy: Russia produces over 640 Billion cubic meters, powering Europe",
+        2000: "Russia maintains global gas dominance while USA output stabilizes near 567 BCM",
+        2008: "American Shale Revolution ignites: horizontal drilling unlocks Marcellus & Permian basins",
+        2011: "Historic Crossover: USA skyrockets past 650 BCM, officially dethroning Russia for #1",
+        2015: "US LNG export boom accelerates while Qatar expands North Field offshore facilities",
+        2020: "US crosses 950 BCM; China and Iran expand domestic production rapidly",
+        2024: "Historic Milestone: United States breaks 1,000 BCM mark (over 1 Trillion cubic meters)",
+        2026: "The 1-Trillion BCM Titan: USA dominates global energy as undisputed king of gas",
+    },
     "top_world_economies_gdp": {
         2000: "USA leads world at \\$10.2T while India sits at #13 with just 470 Billion",
         2008: "China surpasses Germany to become the world's 3rd largest economy",
@@ -169,6 +179,12 @@ VIRAL_LORE_HEADLINES: Dict[str, Dict[int, str]] = {
 
 # Thematic Color Palettes based on topic category
 TOPIC_THEMES = {
+    "gas": {
+        "hero": "#06B6D4",       # Methane Flame Ice Cyan / Electric Blue
+        "rival": "#EF4444",      # Crimson Red (Russia Gazprom)
+        "accent": "#38BDF8",     # Gas Flame Sky Blue
+        "hud_border": "#06B6D4", # Glowing Blue Methane Flame HUD
+    },
     "oil": {
         "hero": "#F59E0B",       # Petroleum Amber Gold
         "rival": "#38BDF8",      # Cyber Sky Blue
@@ -247,6 +263,8 @@ TOPIC_THEMES = {
 def get_topic_theme(indicator_code: str = "", title: str = "") -> Dict[str, str]:
     """Select appropriate high-contrast color scheme for the given topic."""
     txt = f"{indicator_code} {title}".lower()
+    if any(k in txt for k in ["gas", "methane", "lng", "natural gas"]):
+        return TOPIC_THEMES["gas"]
     if any(k in txt for k in ["oil", "crude", "petroleum", "barrel", "energy reserves"]):
         return TOPIC_THEMES["oil"]
     if any(k in txt for k in ["ai", "chatgpt", "gemini", "claude", "groq", "openai", "llama", "deepseek"]):
@@ -275,6 +293,8 @@ def get_topic_theme(indicator_code: str = "", title: str = "") -> Dict[str, str]
 def format_metric_val(val: float, indicator_code: str = "") -> str:
     """Format numeric values according to topic unit (Trillions, %, Billions, Millions, or raw count)."""
     code = (indicator_code or "").lower()
+    if any(k in code for k in ["gas", "bcm", "methane", "natural_gas"]):
+        return f"{val:,.0f} BCM"
     if any(k in code for k in ["oil", "barrel", "petroleum"]):
         return f"{val:,.1f}B Barrels"
     if any(k in code for k in ["market_cap", "trillion", "gdp", "econom"]):
@@ -304,6 +324,8 @@ def format_metric_val(val: float, indicator_code: str = "") -> str:
 def format_gap_val(gap_val: float, indicator_code: str = "") -> str:
     """Format gap difference between leader and rival."""
     code = (indicator_code or "").lower()
+    if any(k in code for k in ["gas", "bcm", "methane", "natural_gas"]):
+        return f"{gap_val:,.0f} BCM"
     if any(k in code for k in ["oil", "barrel", "petroleum"]):
         return f"{gap_val:,.1f}B Barrels"
     if any(k in code for k in ["market_cap", "trillion", "gdp", "econom"]):
